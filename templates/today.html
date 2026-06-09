@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今日看板 - {{ system_settings.system_title }}</title>
+  <style>
+    body{font-family:"Microsoft JhengHei",Arial,sans-serif;margin:0;background:linear-gradient(135deg,#fff7ed,#e0f2fe);color:#0f172a}
+    .wrap{width:min(96vw,1200px);margin:20px auto}.hero{background:#fff;border:1px solid #fed7aa;border-radius:24px;padding:24px;box-shadow:0 18px 50px rgba(15,23,42,.12)}
+    h1{margin:0 0 8px;font-size:34px}.meta{font-weight:900;color:#c2410c}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 22px rgba(15,23,42,.08)}
+    h2{margin:0 0 12px}.line{padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;margin:8px 0;font-weight:900}.line strong{color:#1d4ed8}.empty{color:#94a3b8;padding:16px;text-align:center}.tag{display:inline-block;padding:6px 12px;border-radius:999px;background:#ffedd5;color:#9a3412;font-weight:900;margin:3px}.leave{background:#fee2e2;color:#991b1b}.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.btn{display:inline-block;text-decoration:none;background:#f97316;color:white;border-radius:12px;padding:10px 14px;font-weight:900}.filter{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.filter select{padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;background:white;font-weight:900}.filter button{border:0;background:#111827;color:white;border-radius:10px;padding:9px 14px;font-weight:900}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}h1{font-size:26px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <div class="topbar">
+      <div>
+        <h1>📺 今日看板</h1>
+        <div class="meta">{{ system_settings.system_title }}｜{{ selected_department }}｜{{ selected_shift }} {{ shift_time_label }}｜{{ today_date }}</div>
+      </div>
+      <a class="btn" href="/">回管理後台</a>
+    </div>
+    <form class="filter" method="GET" action="/today">
+      <select name="department">{% for d in departments %}<option value="{{ d }}" {% if d==selected_department %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+      <select name="shift">{% for s in shifts %}<option value="{{ s }}" {% if s==selected_shift %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="year">{% for y in range(selected_year-1, selected_year+2) %}<option value="{{ y }}" {% if y==selected_year %}selected{% endif %}>{{ y }} 年</option>{% endfor %}</select>
+      <select name="month">{% for m in range(1,13) %}<option value="{{ m }}" {% if m==selected_month %}selected{% endif %}>{{ m }} 月</option>{% endfor %}</select>
+      <button type="submit">切換</button>
+    </form>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📌 今日工作分配</h2>
+      {% if duty_record %}<div class="line">今日值日生：<strong>{{ duty_record.值日生 }}</strong></div>{% else %}<div class="line">今日值日生：尚未產生</div>{% endif %}
+      {% if records|length > 0 %}
+        {% for r in records %}<div class="line"><strong>{{ r.人員 }}</strong> 今天工作：{{ r.工作 }} <span style="color:#64748b">（{{ r.方案 }}）</span></div>{% endfor %}
+      {% else %}<div class="empty">尚未產生今日工作分配</div>{% endif %}
+    </div>
+    <div class="card">
+      <h2>👥 今日人員狀態</h2>
+      <div class="line">上班人數：<strong>{{ working|length }}</strong> 人</div>
+      {% for u in working %}<span class="tag">{{ u.name }}</span>{% endfor %}
+      <div class="line" style="margin-top:14px">休假人數：<strong>{{ leaves|length }}</strong> 人</div>
+      {% for u in leaves %}<span class="tag leave">{{ u.name }}：{{ u.leaves.get(current_day|string, '') }}</span>{% endfor %}
+      {% if working|length == 0 and leaves|length == 0 %}<div class="empty">此部門班別尚無人員</div>{% endif %}
+    </div>
+  </div>
+</div>
+</body>
+</html>
