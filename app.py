@@ -1415,9 +1415,76 @@ def balanced_random_order(users, department, year, month, local_counts=None, shi
     return ordered
 
 
+def task_tags(task_str):
+    """把一個工作位字串拆成標籤，例如 "HS 買卡" -> ["HS", "買卡"]。"""
+    return [t for t in str(task_str or "").split() if t.strip()]
+
+
+def monthly_task_counts(department, shift, year=None, month=None, exclude_day=None):
+    """本月該部門班別、已存歷史中每人各工作標籤的累積：{人員: {標籤: 次數}}。
+    exclude_day 可排除某一天（單日重排時避免把即將被覆蓋的舊資料算進去）。"""
+    selected, _ = now_info(year, month)
+    y, m = selected.year, selected.month
+    df = load_history_df()
+    if df.empty:
+        return {}
+    try:
+        sub = df[
+            (pd.to_numeric(df["年份"], errors="coerce") == y)
+            & (pd.to_numeric(df["月份"], errors="coerce") == m)
+            & (df["部門"].astype(str) == str(department))
+            & (df["班別"].astype(str) == str(shift))
+        ]
+        if exclude_day is not None:
+            sub = sub[pd.to_numeric(sub["日"], errors="coerce") != int(exclude_day)]
+    except Exception:
+        return {}
+    counts = {}
+    for _, row in sub.iterrows():
+        person = clean_text(row.get("人員", ""))
+        if not person:
+            continue
+        bucket = counts.setdefault(person, {})
+        for tag in task_tags(row.get("工作", "")):
+            bucket[tag] = bucket.get(tag, 0) + 1
+    return counts
+
+
+def assign_positions_balanced(workers, positions, task_counts):
+    """把當天的工作位公平分給 workers，讓每人各「工作標籤」的累積盡量平均，
+    避免同一項工作一直落在同一人。task_counts 唯讀不修改。
+    回傳 [{"user": 人員, "task": 工作位}, ...]，每位 worker 一筆。
+    人多於工作位時，多出來的人標「未設定工作」；工作位多於人時，多餘的工作位捨棄。
+    """
+    workers = list(workers)
+    positions = list(positions)
+    sim = {w: dict(task_counts.get(w, {})) for w in workers}
+    n_assign = min(len(workers), len(positions))
+    pos_order = list(range(len(positions)))
+    random.shuffle(pos_order)
+    # 標籤較多（較難安排）的工作位先處理，平手者維持隨機順序
+    pos_order.sort(key=lambda i: -len(task_tags(positions[i])))
+    pos_order = pos_order[:n_assign]
+    remaining = list(workers)
+    chosen = {}
+    for pi in pos_order:
+        tags = task_tags(positions[pi])
+        random.shuffle(remaining)          # 平手隨機
+        best_w, best_cost = None, None
+        for w in remaining:
+            cost = sum(sim[w].get(t, 0) for t in tags)
+            if best_cost is None or cost < best_cost:
+                best_cost, best_w = cost, w
+        chosen[best_w] = positions[pi]
+        for t in tags:
+            sim[best_w][t] = sim[best_w].get(t, 0) + 1
+        remaining.remove(best_w)
+    return [{"user": w, "task": chosen.get(w, "未設定工作")} for w in workers]
+
+
 class MonthlyAssignmentContext:
     """整月／批次分配時預先載入假表、方案與歷史，避免每天重複讀檔。"""
-    def __init__(self, department, shift, year=None, month=None):
+    def __init__(self, department, shift, year=None, month=None, seed_task_counts=False):
         selected, _ = now_info(year, month)
         self.year, self.month = selected.year, selected.month
         self.department = department
@@ -1441,6 +1508,9 @@ class MonthlyAssignmentContext:
         # 各讀一次：方案與已存歷史的本月每人分配次數
         self.schemes = load_work_schemes()
         self.base_counts = monthly_person_counts(department, self.year, self.month, shift)
+        # 每人×每工作標籤本月累積，平均隨機分配工作時用來公平輪替；
+        # 整月重產時從 0 起算（seed_task_counts=False），逐日累積；到月底重排才從已固定的前段起算。
+        self.base_task_counts = monthly_task_counts(department, shift, self.year, self.month) if seed_task_counts else {}
 
     def working_users(self, day):
         day = str(day)
@@ -1468,21 +1538,35 @@ def create_assignment_for_day(department, day, mode="balanced_random", save=True
         return {"status": "error", "message": f"{department} {day} 號上班 {worker_count} 人，但沒有 {worker_count} 人方案", "day": day, "department": department, "worker_count": worker_count}
 
     tasks = scheme.get("tasks", [])
-    if mode == "fixed":
-        ordered_workers = workers[:]
-    else:
-        ordered_workers = balanced_random_order(workers, department, year, month, local_counts=local_counts, shift=shift, base_counts=base_counts)
-        if mode == "random":
-            # 保留平衡候選後，工作順序隨機
-            random.shuffle(tasks)
-
     date_obj = datetime(year, month, int(day))
     batch_id = batch_id or uuid.uuid4().hex[:12]
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    assignments = []
-    for idx, user in enumerate(ordered_workers):
-        task = tasks[idx] if idx < len(tasks) else "未設定工作"
-        assignments.append({"user": user, "task": task})
+
+    if mode == "fixed":
+        # 固定順序：人員照原順序、工作照方案順序對位
+        assignments = [{"user": u, "task": (tasks[i] if i < len(tasks) else "未設定工作")}
+                       for i, u in enumerate(workers)]
+    elif mode == "random":
+        # 純隨機：人員與工作各自打散後對位（不參考歷史）
+        ordered_workers = balanced_random_order(workers, department, year, month, local_counts=local_counts, shift=shift, base_counts=base_counts)
+        rtasks = tasks[:]
+        random.shuffle(rtasks)
+        assignments = [{"user": u, "task": (rtasks[i] if i < len(rtasks) else "未設定工作")}
+                       for i, u in enumerate(ordered_workers)]
+    else:
+        # 平均隨機：依「每人 × 每個工作標籤」本月累積做公平輪替，
+        # 讓同一項工作盡量平均落在不同人，不再集中在同一人。
+        if ctx is not None:
+            base_task_counts = ctx.base_task_counts
+        else:
+            base_task_counts = monthly_task_counts(department, shift, year, month, exclude_day=int(day))
+        assignments = assign_positions_balanced(workers, tasks, base_task_counts)
+        if ctx is not None:
+            # 逐日累積回 ctx，讓後面的日子知道前面排過什麼，整月持續維持每項工作公平
+            for a in assignments:
+                bucket = ctx.base_task_counts.setdefault(a["user"], {})
+                for t in task_tags(a["task"]):
+                    bucket[t] = bucket.get(t, 0) + 1
 
     result = {
         "status": "success",
@@ -2787,7 +2871,7 @@ def reassign_from_day(department, shift, start_day, year, month):
         return {"reassigned": False, "days": 0, "error": msg}
 
     # 此時歷史只剩 1~(start_day-1)，ctx.base_counts 即為已固定部分；逐天往後補回平均
-    ctx = MonthlyAssignmentContext(department, shift, year, month)
+    ctx = MonthlyAssignmentContext(department, shift, year, month, seed_task_counts=True)
     batch_id = uuid.uuid4().hex[:12]
     local_counts = {}
     results = []
