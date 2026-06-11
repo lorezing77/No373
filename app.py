@@ -33,6 +33,7 @@ ADMIN_PASSWORD = "9527"
 SYSTEM_SETTINGS_FILE = os.path.join(BASE_DIR, "system_settings.json")
 AUTO_BACKUP_DIR = os.path.join(BASE_DIR, "auto_backups")
 WEEKLY_CLEAN_FILE = os.path.join(BASE_DIR, "weekly_clean_status.json")
+WORK_ITEMS_FILE = os.path.join(BASE_DIR, "work_items.json")
 
 # ======== 資料庫層（Neon PostgreSQL）========
 # 設定環境變數 DATABASE_URL 即啟用資料庫；未設定時自動沿用原本的 Excel/JSON 檔案。
@@ -355,14 +356,19 @@ def load_system_settings():
             start = str(item.get("start", "00:00")).strip() or "00:00"
             end = str(item.get("end", "08:00")).strip() or "08:00"
             dc = item.get("duty_count", 1)
+            cc = item.get("cleaner_count", data.get("weekly_cleaner_count", 3))
         else:
-            name, start, end, dc = str(item).strip(), "00:00", "08:00", 1
+            name, start, end, dc, cc = str(item).strip(), "00:00", "08:00", 1, 3
         try:
             dc = max(0, int(dc))
         except Exception:
             dc = 1
+        try:
+            cc = max(1, int(cc))
+        except Exception:
+            cc = 3
         if name and name not in [s.get("name") for s in shifts]:
-            shifts.append({"name": name, "start": start, "end": end, "duty_count": dc})
+            shifts.append({"name": name, "start": start, "end": end, "duty_count": dc, "cleaner_count": cc})
     data["shifts"] = shifts or default_system_settings()["shifts"]
     try:
         data["weekly_cleaner_count"] = max(1, int(data.get("weekly_cleaner_count", 3)))
@@ -612,6 +618,155 @@ def save_plan_status(data):
         else:
             with open(PLAN_STATUS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def load_work_items_map():
+    """工作項目庫：dict { group_key: [ {"name": str}, ... ] }，每個部門×班別各自一份。"""
+    raw = None
+    if db_enabled():
+        raw = kv_get("work_items")
+    elif os.path.exists(WORK_ITEMS_FILE):
+        try:
+            with open(WORK_ITEMS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception:
+            raw = None
+    result = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            items, seen = [], set()
+            if isinstance(v, list):
+                for it in v:
+                    name = clean_text(it.get("name", "")) if isinstance(it, dict) else clean_text(it)
+                    if name and name not in seen:
+                        seen.add(name); items.append({"name": name})
+            result[str(k)] = items
+    return result
+
+
+def load_work_items(department, shift):
+    return load_work_items_map().get(group_key(department, shift), [])
+
+
+def build_item_stats(department, shift, year, month):
+    """本月該部門班別：人員 × 工作項目標籤 的接到次數。
+    欄＝項目庫標籤（固定列出，含 0 次）＋實際出現過但不在項目庫的標籤（附在後面）。
+    列＝本月該組實際有被排到工作的人員。
+    """
+    items = load_work_items(department, shift)
+    item_names = []
+    for it in items:
+        nm = clean_text(it.get("name", "")) if isinstance(it, dict) else clean_text(it)
+        if nm and nm not in item_names:
+            item_names.append(nm)
+    stats = {}
+    persons = []
+    try:
+        df = load_history_df()
+    except Exception:
+        df = None
+    if df is not None and not df.empty:
+        try:
+            sub = df[
+                (pd.to_numeric(df["年份"], errors="coerce") == year)
+                & (pd.to_numeric(df["月份"], errors="coerce") == month)
+                & (df["部門"].astype(str) == str(department))
+                & (df["班別"].astype(str) == str(shift))
+            ]
+            for _, row in sub.iterrows():
+                person = clean_text(row.get("人員", ""))
+                work = clean_text(row.get("工作", ""))
+                if not person:
+                    continue
+                if person not in stats:
+                    stats[person] = {}
+                    persons.append(person)
+                for tag in work.split():
+                    tag = tag.strip()
+                    if tag:
+                        stats[person][tag] = stats[person].get(tag, 0) + 1
+        except Exception as e:
+            print(f"統計工作項目失敗：{e}")
+    persons.sort()
+    extra_tags = []
+    for p in stats:
+        for tag in stats[p]:
+            if tag not in item_names and tag not in extra_tags:
+                extra_tags.append(tag)
+    extra_tags.sort()
+    columns = item_names + extra_tags
+    return {"columns": columns, "persons": persons, "stats": stats, "extra": extra_tags}
+
+
+def build_duty_stats(shift, year, month):
+    """本月該班別：每人當值日生的次數（值日生名單裡 0 次的人也列出）。
+    回傳 [(姓名, 次數), ...]，依次數高到低、同次數依姓名。"""
+    counts = {}
+    try:
+        df = load_duty_history_df()
+    except Exception:
+        df = None
+    if df is not None and not df.empty:
+        try:
+            sub = df[
+                (pd.to_numeric(df["年份"], errors="coerce") == year)
+                & (pd.to_numeric(df["月份"], errors="coerce") == month)
+                & (df["班別"].astype(str) == str(shift))
+            ]
+            for _, row in sub.iterrows():
+                person = clean_text(row.get("值日生", ""))
+                if person:
+                    counts[person] = counts.get(person, 0) + 1
+        except Exception as e:
+            print(f"統計值日生失敗：{e}")
+    try:
+        for m in load_duty_members(shift):
+            m = clean_text(m)
+            if m and m not in counts:
+                counts[m] = 0
+    except Exception:
+        pass
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+
+
+def build_combined_stats(department, shift, year, month):
+    """合併『工作項目統計』與『值日生次數』成同一張表。
+    列＝該部門班別有被排工作的人 ∪ 該班別值日生名單；
+    欄＝工作項目們＋工作合計＋值日生次數。"""
+    item = build_item_stats(department, shift, year, month)
+    duty = dict(build_duty_stats(shift, year, month))
+    persons = list(item["persons"])
+    for p in duty:
+        if p not in persons:
+            persons.append(p)
+    persons.sort()
+    return {
+        "columns": item["columns"],
+        "persons": persons,
+        "stats": item["stats"],
+        "duty": duty,
+        "extra": item["extra"],
+    }
+
+
+def save_work_items_map(m):
+    clean = {}
+    for k, v in (m or {}).items():
+        items, seen = [], set()
+        for it in (v or []):
+            name = clean_text(it.get("name", "")) if isinstance(it, dict) else clean_text(it)
+            if name and name not in seen:
+                seen.add(name); items.append({"name": name})
+        clean[str(k)] = items
+    try:
+        if db_enabled():
+            kv_put("work_items", clean)
+        else:
+            with open(WORK_ITEMS_FILE, "w", encoding="utf-8") as f:
+                json.dump(clean, f, ensure_ascii=False, indent=2)
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -1970,19 +2125,27 @@ def index():
     display_group_keys = [selected_group_key]
     attendance_summary = build_attendance_summary(calendar_groups, display_group_keys, num_days)
     selected_day_default = real_now.day if now.year == real_now.year and now.month == real_now.month and real_now.day <= num_days else 1
-    today_date = f"{now.year}-{now.month:02d}-{selected_day_default:02d}"
+    try:
+        sel_day = int(request.args.get("day", selected_day_default) or selected_day_default)
+    except Exception:
+        sel_day = selected_day_default
+    if sel_day < 1 or sel_day > num_days:
+        sel_day = selected_day_default
+    today_date = f"{now.year}-{now.month:02d}-{sel_day:02d}"
     today_assignment_records = latest_assignment_records_for_day(today_date, selected_department, selected_shift)
     today_duty_record = latest_duty_record_for_day(today_date, selected_shift)
     month_duty_records = latest_duty_records_for_month(now.year, now.month, selected_shift)
     plan_status = get_plan_status(now.year, now.month, selected_department, selected_shift)
     anomaly_ctx = MonthlyAssignmentContext(selected_department, selected_shift, now.year, now.month)
     anomalies = build_anomaly_report(now.year, now.month, selected_department, selected_shift, ctx=anomaly_ctx)
+    combined_stats = build_combined_stats(selected_department, selected_shift, now.year, now.month)
 
     return render_template(
         "index.html",
         current_year=now.year,
         current_month=now.month,
-        current_day=selected_day_default,
+        current_day=sel_day,
+        combined_stats=combined_stats,
         selected_year=now.year,
         selected_month=now.month,
         selected_department=selected_department,
@@ -2001,6 +2164,7 @@ def index():
         duty_history_people=duty_history_people,
         attendance_summary=attendance_summary,
         work_schemes=work_schemes,
+        work_items_map=load_work_items_map(),
         history_records=history_records,
         history_stats=history_stats,
         daily_schedule=[],
@@ -2187,7 +2351,13 @@ def toggle_leave():
         log_operation("自動補位（請假連動）", year=year, month=month,
                       content="；".join(reassign_summaries),
                       reason=f"{name} {month}/{day} 假別變更為「{new_value or '上班'}」")
-    return jsonify({"status": "success", "value": new_value, "reassign": reassign_summaries})
+    # 值日生連動：若該人在值日生名單，重排其班別的「當天到月底」值日生
+    duty_summaries = auto_reassign_duty_after_leave_change(name, int(day), year, month)
+    if duty_summaries:
+        log_operation("自動補位（值日生連動）", year=year, month=month,
+                      content="；".join(duty_summaries),
+                      reason=f"{name} {month}/{day} 假別變更為「{new_value or '上班'}」")
+    return jsonify({"status": "success", "value": new_value, "reassign": reassign_summaries + duty_summaries})
 
 
 @app.route("/api/add_work_scheme", methods=["POST"])
@@ -2213,6 +2383,60 @@ def add_work_scheme():
         return jsonify({"status": "error", "message": "新增方案失敗"})
     log_operation("新增工作方案", department, shift, content=f"{scheme_name}：{bucket} 人方案")
     return jsonify({"status": "success", "message": f"已新增 {scheme_name}，自動分類為 {bucket} 人方案", "scheme": scheme})
+
+
+@app.route("/api/add_work_item", methods=["POST"])
+def add_work_item():
+    admin_error = require_admin_json()
+    if admin_error:
+        return admin_error
+    req = request.json or {}
+    department = clean_text(req.get("department", ""))
+    shift = clean_text(req.get("shift", "")) or "晚班"
+    name = clean_text(req.get("name", ""))
+    if department not in DEPARTMENTS or shift not in SHIFTS:
+        return jsonify({"status": "error", "message": "部門或班別錯誤"})
+    if not name:
+        return jsonify({"status": "error", "message": "請輸入項目名稱"})
+    if " " in name or "\u3000" in name:
+        return jsonify({"status": "error", "message": "項目名稱請勿包含空格"})
+    m = load_work_items_map()
+    key = group_key(department, shift)
+    items = m.get(key, [])
+    if any(it["name"] == name for it in items):
+        return jsonify({"status": "error", "message": "這個項目已經存在了"})
+    items.append({"name": name})
+    m[key] = items
+    ok, err = save_work_items_map(m)
+    if not ok:
+        return jsonify({"status": "error", "message": f"儲存失敗：{err}"})
+    log_operation("新增工作項目", department, shift, content=name)
+    return jsonify({"status": "success", "message": f"已新增項目「{name}」", "department": department, "shift": shift, "items": items})
+
+
+@app.route("/api/delete_work_item", methods=["POST"])
+def delete_work_item():
+    admin_error = require_admin_json()
+    if admin_error:
+        return admin_error
+    req = request.json or {}
+    department = clean_text(req.get("department", ""))
+    shift = clean_text(req.get("shift", "")) or "晚班"
+    name = clean_text(req.get("name", ""))
+    if department not in DEPARTMENTS or shift not in SHIFTS:
+        return jsonify({"status": "error", "message": "部門或班別錯誤"})
+    m = load_work_items_map()
+    key = group_key(department, shift)
+    items = m.get(key, [])
+    new_items = [it for it in items if it["name"] != name]
+    if len(new_items) == len(items):
+        return jsonify({"status": "error", "message": "找不到這個項目"})
+    m[key] = new_items
+    ok, err = save_work_items_map(m)
+    if not ok:
+        return jsonify({"status": "error", "message": f"儲存失敗：{err}"})
+    log_operation("刪除工作項目", department, shift, content=name)
+    return jsonify({"status": "success", "message": f"已刪除項目「{name}」", "department": department, "shift": shift, "items": new_items})
 
 
 @app.route("/api/save_work_scheme", methods=["POST"])
@@ -2346,6 +2570,111 @@ def replace_month_department_history(year, month, department, shift, results):
         df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
     return save_history_df(df)
 
+
+def produce_duty_for_month(shift, year, month):
+    """產生（或重產）某班別本月每日值日生與每週清潔。會先清掉本月該班別舊值日生避免疊加。
+    回傳 dict：status / message / shift / daily_schedule / weekly_schedule。"""
+    if shift not in SHIFTS:
+        shift = default_duty_shift()
+    duty_users = load_duty_members(shift)
+    if len(duty_users) < 1:
+        return {"status": "error", "message": f"「{shift}」值日生名單內沒有同仁，請先在該班別新增值日生"}
+    now, num_days = now_info(year, month)
+    year, month = now.year, now.month
+    _, df_leave = init_attendance_sheets(year, month)
+    week_day_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+    leave_records = {}
+    if not df_leave.empty:
+        for _, row in df_leave.iterrows():
+            nm = clean_text(row.get("姓名", ""))
+            if nm:
+                leave_records[nm] = row.to_dict()
+
+    # 先刪本月該班別舊值日生（避免疊加），再以剩餘歷史算公平基礎
+    dfh = load_duty_history_df()
+    if not dfh.empty:
+        old_mask = (
+            (dfh["年份"].astype(str) == str(year)) &
+            (dfh["月份"].astype(str) == str(month)) &
+            (dfh["班別"].astype(str).str.strip() == str(shift))
+        )
+        if old_mask.any():
+            dfh = dfh[~old_mask].reset_index(drop=True)
+            save_duty_history_df(dfh)
+
+    daily_counts = duty_person_counts(shift)
+    for user in duty_users:
+        daily_counts.setdefault(user, 0)
+
+    duty_count = daily_duty_count_for_shift(shift)
+    daily_schedule = []
+    for day in range(1, num_days + 1):
+        date_obj = datetime(year, month, day)
+        available_today = [u for u in duty_users
+                           if clean_leave_value(leave_records.get(u, {}).get(str(day), "")) == ""]
+        if not available_today:
+            available_today = duty_users.copy()
+        pick = min(duty_count, len(available_today))
+        chosen_list = []
+        for _ in range(pick):
+            pool = [u for u in available_today if u not in chosen_list]
+            if not pool:
+                break
+            min_count = min(daily_counts[u] for u in pool)
+            candidates = [u for u in pool if daily_counts[u] == min_count]
+            chosen = random.choice(candidates)
+            chosen_list.append(chosen)
+            daily_counts[chosen] += 1
+        ds = date_obj.strftime("%Y-%m-%d")
+        wd = week_day_map[date_obj.weekday()]
+        for chosen in chosen_list:
+            daily_schedule.append({"date": ds, "week_day": wd, "user": chosen})
+
+    ok, msg = append_duty_history(daily_schedule, shift)
+    if not ok:
+        return {"status": "error", "message": msg}
+
+    _settings = load_system_settings()
+    cleaner_count = max(1, int(_settings.get("weekly_cleaner_count", 3)))
+    for _s in _settings.get("shifts", []):
+        if _s.get("name") == shift:
+            try:
+                cleaner_count = max(1, int(_s.get("cleaner_count", cleaner_count)))
+            except Exception:
+                pass
+            break
+    weekly_counts = {u: 0 for u in duty_users}
+    weekly_schedule = []
+    for week_num in range(1, 5):
+        week_users = []
+        for _ in range(min(cleaner_count, len(duty_users))):
+            pool = [u for u in duty_users if u not in week_users]
+            min_count = min(weekly_counts[u] for u in pool)
+            candidates = [u for u in pool if weekly_counts[u] == min_count]
+            chosen = random.choice(candidates)
+            week_users.append(chosen)
+            weekly_counts[chosen] += 1
+        weekly_schedule.append({"week": f"第 {week_num} 週", "users": week_users})
+    set_weekly_clean(year, month, shift, weekly_schedule)
+
+    log_operation("產生每日值日生與清潔", shift=shift, year=year, month=month, content=f"{shift}｜每日 {duty_count} 人，共 {len(daily_schedule)} 筆，每週清潔 {len(weekly_schedule)} 週")
+    return {"status": "success", "message": f"已產生 {year}/{month}「{shift}」每日值日生，並存入歷史", "shift": shift, "daily_schedule": daily_schedule, "weekly_schedule": weekly_schedule}
+
+
+def duty_exists_for_month(shift, year, month):
+    """該班別本月是否已產生過值日生。"""
+    now, _ = now_info(year, month)
+    df = load_duty_history_df()
+    if df.empty:
+        return False
+    mask = (
+        (df["年份"].astype(str) == str(now.year)) &
+        (df["月份"].astype(str) == str(now.month)) &
+        (df["班別"].astype(str).str.strip() == str(shift))
+    )
+    return bool(mask.any())
+
+
 @app.route("/api/generate_month_assignments", methods=["POST"])
 def generate_month_assignments():
 
@@ -2381,10 +2710,16 @@ def generate_month_assignments():
     ok, msg = replace_month_department_history(year, month, department, shift, results)
     if not ok:
         return jsonify({"status": "error", "message": msg})
-    log_operation("產生／更新整月工作表", department, shift, year, month, f"共 {len(results)} 天，錯誤 {len(errors)} 筆")
+    # 同步：該班別本月若還沒值日生，就自動產一份（含每週清潔），達成「工作表＋值日生一次產生」
+    duty_note = ""
+    if not duty_exists_for_month(shift, year, month):
+        dres = produce_duty_for_month(shift, year, month)
+        if dres.get("status") == "success":
+            duty_note = f"，並已自動產生「{shift}」本月每日值日生"
+    log_operation("產生／更新整月工作表", department, shift, year, month, f"共 {len(results)} 天，錯誤 {len(errors)} 筆{duty_note}")
     return jsonify({
         "status": "success",
-        "message": f"已重新產生並覆蓋 {department} {shift} {year}/{month} 整月工作表，共 {len(results)} 天。當日分配結果會直接從這份整月結果讀取。",
+        "message": f"已重新產生並覆蓋 {department} {shift} {year}/{month} 整月工作表，共 {len(results)} 天{duty_note}。當日分配結果會直接從這份整月結果讀取。",
         "results": results,
         "errors": errors[:20]
     })
@@ -2490,6 +2825,97 @@ def auto_reassign_after_leave_change(name, day, year, month):
         res = reassign_from_day(dept, sh, day, year, month)
         if res.get("reassigned"):
             summaries.append(f"{dept}｜{sh}：已自動重排 {res.get('start_day')} 號起共 {res.get('days')} 天")
+    return summaries
+
+
+def reassign_duty_from_day(shift, start_day, year, month):
+    """值日生版『到月底重排』：保留 [1..start_day-1]，重排 [start_day..月底]，公平拉平。
+    僅在該班別本月已產生過值日生時才動作。挑人邏輯與 generate_schedule 完全一致。"""
+    selected, num_days = now_info(year, month)
+    year, month = selected.year, selected.month
+    start_day = max(1, int(start_day))
+
+    duty_users = load_duty_members(shift)
+    if len(duty_users) < 1:
+        return {"reassigned": False, "days": 0}
+
+    df = load_duty_history_df()
+    if df.empty:
+        return {"reassigned": False, "days": 0}
+    month_mask = (
+        (df["年份"].astype(str) == str(year)) &
+        (df["月份"].astype(str) == str(month)) &
+        (df["班別"].astype(str).str.strip() == str(shift))
+    )
+    if not month_mask.any():
+        return {"reassigned": False, "days": 0}
+
+    # 刪除 start_day 起的舊值日生，保留 1~(start_day-1)
+    drop_mask = month_mask & (pd.to_numeric(df["日"], errors="coerce") >= start_day)
+    df = df[~drop_mask].reset_index(drop=True)
+    ok, msg = save_duty_history_df(df)
+    if not ok:
+        return {"reassigned": False, "days": 0, "error": msg}
+
+    # 公平基礎：從剩餘歷史（含本月 1~start_day-1 與其他月）即時算
+    daily_counts = duty_person_counts(shift)
+    for u in duty_users:
+        daily_counts.setdefault(u, 0)
+
+    _, df_leave = init_attendance_sheets(year, month)
+    leave_records = {}
+    if not df_leave.empty:
+        for _, row in df_leave.iterrows():
+            nm = clean_text(row.get("姓名", ""))
+            if nm:
+                leave_records[nm] = row.to_dict()
+
+    duty_count = daily_duty_count_for_shift(shift)
+    if duty_count < 1:
+        return {"reassigned": False, "days": 0}
+    week_day_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+    now, _ = now_info(year, month)
+    daily_schedule = []
+    for day in range(start_day, num_days + 1):
+        date_obj = datetime(now.year, now.month, day)
+        available_today = [u for u in duty_users
+                           if clean_leave_value(leave_records.get(u, {}).get(str(day), "")) == ""]
+        if not available_today:
+            available_today = duty_users.copy()
+        pick = min(duty_count, len(available_today))
+        chosen_list = []
+        for _ in range(pick):
+            pool = [u for u in available_today if u not in chosen_list]
+            if not pool:
+                break
+            min_count = min(daily_counts[u] for u in pool)
+            candidates = [u for u in pool if daily_counts[u] == min_count]
+            chosen = random.choice(candidates)
+            chosen_list.append(chosen)
+            daily_counts[chosen] += 1
+        ds = date_obj.strftime("%Y-%m-%d")
+        wd = week_day_map[date_obj.weekday()]
+        for chosen in chosen_list:
+            daily_schedule.append({"date": ds, "week_day": wd, "user": chosen})
+
+    if daily_schedule:
+        ok, msg = append_duty_history(daily_schedule, shift)
+        if not ok:
+            return {"reassigned": False, "days": 0, "error": msg}
+    days_count = len({d["date"] for d in daily_schedule})
+    return {"reassigned": True, "days": days_count, "start_day": start_day}
+
+
+def auto_reassign_duty_after_leave_change(name, day, year, month):
+    """某人劃假／銷假後，自動重排其所在值日生班別的 [day..月底]。回傳摘要。"""
+    selected, _ = now_info(year, month)
+    year, month = selected.year, selected.month
+    summaries = []
+    for sh in SHIFTS:
+        if name in load_duty_members(sh):
+            res = reassign_duty_from_day(sh, day, year, month)
+            if res.get("reassigned"):
+                summaries.append(f"{sh} 值日生：已自動重排 {res.get('start_day')} 號起共 {res.get('days')} 天")
     return summaries
 
 
@@ -2622,6 +3048,7 @@ def save_settings_route():
     shift_starts = request.form.getlist("shift_start")
     shift_ends = request.form.getlist("shift_end")
     shift_duty_counts = request.form.getlist("shift_duty_count")
+    shift_cleaner_counts = request.form.getlist("shift_cleaner_count")
     shifts = []
     for i, name in enumerate(shift_names):
         nm = clean_text(name)
@@ -2631,7 +3058,11 @@ def save_settings_route():
             dc = max(0, int(shift_duty_counts[i])) if i < len(shift_duty_counts) and clean_text(shift_duty_counts[i]) != "" else 1
         except Exception:
             dc = 1
-        shifts.append({"name": nm, "start": clean_text(shift_starts[i] if i < len(shift_starts) else ""), "end": clean_text(shift_ends[i] if i < len(shift_ends) else ""), "duty_count": dc})
+        try:
+            cc = max(1, int(shift_cleaner_counts[i])) if i < len(shift_cleaner_counts) and clean_text(shift_cleaner_counts[i]) != "" else 3
+        except Exception:
+            cc = 3
+        shifts.append({"name": nm, "start": clean_text(shift_starts[i] if i < len(shift_starts) else ""), "end": clean_text(shift_ends[i] if i < len(shift_ends) else ""), "duty_count": dc, "cleaner_count": cc})
     if not shifts:
         shifts = current.get("shifts", default_system_settings()["shifts"])
     try:
@@ -2667,7 +3098,13 @@ def today_dashboard():
     if selected_department not in DEPARTMENTS: selected_department = DEPARTMENTS[0]
     if selected_shift not in SHIFTS: selected_shift = SHIFTS[-1]
     now, num_days = now_info(selected_year, selected_month)
-    day = real_now.day if now.year == real_now.year and now.month == real_now.month and real_now.day <= num_days else 1
+    default_day = real_now.day if now.year == real_now.year and now.month == real_now.month and real_now.day <= num_days else 1
+    try:
+        day = int(request.args.get("day", default_day) or default_day)
+    except Exception:
+        day = default_day
+    if day < 1 or day > num_days:
+        day = default_day
     date_str = f"{now.year}-{now.month:02d}-{day:02d}"
     _, calendar_groups = build_calendar_data(now.year, now.month)
     selected_key = group_key(selected_department, selected_shift)
@@ -2676,7 +3113,7 @@ def today_dashboard():
     leaves = [u for u in users if u.get("leaves", {}).get(str(day), "")]
     records = latest_assignment_records_for_day(date_str, selected_department, selected_shift)
     duty_record = latest_duty_record_for_day(date_str, selected_shift)
-    return render_template("today.html", system_settings=load_system_settings(), departments=DEPARTMENTS, shifts=SHIFTS, selected_department=selected_department, selected_shift=selected_shift, selected_year=now.year, selected_month=now.month, current_day=day, today_date=date_str, working=working, leaves=leaves, records=records, duty_record=duty_record, shift_time_label=shift_time_label(selected_shift))
+    return render_template("today.html", system_settings=load_system_settings(), departments=DEPARTMENTS, shifts=SHIFTS, selected_department=selected_department, selected_shift=selected_shift, selected_year=now.year, selected_month=now.month, current_day=day, total_days=num_days, today_date=date_str, working=working, leaves=leaves, records=records, duty_record=duty_record, shift_time_label=shift_time_label(selected_shift))
 
 
 @app.route("/download_latest_auto_backup")
@@ -2766,7 +3203,11 @@ def add_duty_user():
             if not save_duty_members_df(df):
                 return redirect(url_for("index", login_msg="值日生名單儲存失敗，請確認資料檔案沒有被佔用後再試。"))
             log_operation("新增值日生", shift=shift, content=f"新增值日生 {name}（{shift}）")
-    return redirect(url_for("index"))
+    return redirect(url_for("index",
+        department=clean_text(request.form.get("selected_department", "")),
+        shift=clean_text(request.form.get("selected_shift", "")) or shift,
+        year=request.form.get("year", ""),
+        month=request.form.get("month", "")))
 
 
 @app.route("/delete_duty_user/<shift>/<name>")
@@ -2783,7 +3224,11 @@ def delete_duty_user(shift, name):
         df = df[~mask].reset_index(drop=True)
         save_duty_members_df(df)
         log_operation("刪除值日生", shift=shift, content=f"刪除值日生 {name}（{shift}）")
-    return redirect(url_for("index"))
+    return redirect(url_for("index",
+        department=clean_text(request.args.get("department", "")),
+        shift=shift,
+        year=request.args.get("year", ""),
+        month=request.args.get("month", "")))
 
 
 @app.route("/api/generate_schedule", methods=["POST"])
@@ -2796,72 +3241,8 @@ def generate_schedule():
     year = req.get("year") or datetime.now().year
     month = req.get("month") or datetime.now().month
     shift = clean_text(req.get("shift", "")) or default_duty_shift()
-    if shift not in SHIFTS:
-        shift = default_duty_shift()
-    duty_users = load_duty_members(shift)
-    _, df_leave = init_attendance_sheets(year, month)
-    if len(duty_users) < 1:
-        return jsonify({"status": "error", "message": f"「{shift}」值日生名單內沒有同仁，請先在該班別新增值日生"})
-    now, num_days = now_info(year, month)
-    week_day_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
-    leave_records = {}
-    if not df_leave.empty:
-        for _, row in df_leave.iterrows():
-            name = clean_text(row.get("姓名", ""))
-            if name:
-                leave_records[name] = row.to_dict()
-
-    # 公平基礎：從歷史即時算該班別每人累積值日次數，多 worker 一致、重啟不歸零
-    daily_counts = duty_person_counts(shift)
-    for user in duty_users:
-        daily_counts.setdefault(user, 0)
-
-    duty_count = daily_duty_count_for_shift(shift)
-    daily_schedule = []
-    for day in range(1, num_days + 1):
-        date_obj = datetime(now.year, now.month, day)
-        available_today = [u for u in duty_users
-                           if clean_leave_value(leave_records.get(u, {}).get(str(day), "")) == ""]
-        if not available_today:
-            available_today = duty_users.copy()
-        pick = min(duty_count, len(available_today))
-        chosen_list = []
-        for _ in range(pick):
-            pool = [u for u in available_today if u not in chosen_list]
-            if not pool:
-                break
-            min_count = min(daily_counts[u] for u in pool)
-            candidates = [u for u in pool if daily_counts[u] == min_count]
-            chosen = random.choice(candidates)
-            chosen_list.append(chosen)
-            daily_counts[chosen] += 1
-        ds = date_obj.strftime("%Y-%m-%d")
-        wd = week_day_map[date_obj.weekday()]
-        for chosen in chosen_list:
-            daily_schedule.append({"date": ds, "week_day": wd, "user": chosen})
-
-    ok, msg = append_duty_history(daily_schedule, shift)
-    if not ok:
-        return jsonify({"status": "error", "message": msg})
-
-    # 每週清潔：本月內平衡，依班別存成 JSON
-    cleaner_count = max(1, int(load_system_settings().get("weekly_cleaner_count", 3)))
-    weekly_counts = {u: 0 for u in duty_users}
-    weekly_schedule = []
-    for week_num in range(1, 5):
-        week_users = []
-        for _ in range(min(cleaner_count, len(duty_users))):
-            pool = [u for u in duty_users if u not in week_users]
-            min_count = min(weekly_counts[u] for u in pool)
-            candidates = [u for u in pool if weekly_counts[u] == min_count]
-            chosen = random.choice(candidates)
-            week_users.append(chosen)
-            weekly_counts[chosen] += 1
-        weekly_schedule.append({"week": f"第 {week_num} 週", "users": week_users})
-    set_weekly_clean(now.year, now.month, shift, weekly_schedule)
-
-    log_operation("產生每日值日生與清潔", shift=shift, year=now.year, month=now.month, content=f"{shift}｜每日 {duty_count} 人，共 {len(daily_schedule)} 筆，每週清潔 {len(weekly_schedule)} 週")
-    return jsonify({"status": "success", "message": f"已產生 {now.year}/{now.month}「{shift}」每日值日生，並存入歷史", "shift": shift, "daily_schedule": daily_schedule, "weekly_schedule": weekly_schedule})
+    res = produce_duty_for_month(shift, year, month)
+    return jsonify(res)
 
 
 @app.route("/api/clear_schedule", methods=["POST"])
