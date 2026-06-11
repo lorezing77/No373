@@ -66,6 +66,27 @@
     .t-clean{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px}
     .t-clean .t-sub{font-size:12px;color:#9fb3d8;margin-bottom:6px;font-weight:700}
     .t-clean .chip{display:inline-block;background:rgba(125,211,252,.15);border:1px solid rgba(125,211,252,.3);color:#bae6fd;border-radius:999px;padding:3px 9px;margin:2px;font-size:12px;font-weight:700}
+    .wtag{display:inline-block;border-radius:7px;padding:3px 11px;margin:2px 4px 2px 0;font-size:12.5px;font-weight:700;color:#1b2533;line-height:1.6;white-space:nowrap;background:#9fb0c4;box-shadow:0 1px 3px rgba(0,0,0,.22)}
+    .wtag-wrap{display:inline}
+    .wtag-del{display:inline-flex;align-items:center;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:9px;margin:2px 4px 2px 0;padding-right:3px}
+    .wtag-del .wtag{margin:0}
+    .wtag-x{background:none;border:none;color:#ff9a9a;font-size:15px;font-weight:700;cursor:pointer;padding:0 5px;line-height:1}
+    .wtag-x:hover{color:#ff5a5a}
+    .scheme-group{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+    .sg-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .sg-title{font-size:13px;color:#9fb3d8;font-weight:700}
+    .sg-del{background:none;border:1px solid rgba(255,120,120,.4);color:#ff9a9a;border-radius:8px;padding:2px 8px;font-size:12px;cursor:pointer}
+    .sg-del:hover{background:rgba(255,90,90,.15)}
+    .sg-items{display:flex;flex-wrap:wrap}
+    .built-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 11px;margin-bottom:7px}
+    .bg-title{font-weight:700;font-size:13px;color:#9fb0c4;margin-right:4px}
+    .bg-del{margin-left:auto;background:none;border:1px solid rgba(255,120,120,.4);color:#ff9a9a;border-radius:8px;padding:2px 9px;font-size:12px;cursor:pointer}
+    .bg-del:hover{background:rgba(255,90,90,.15)}
+    .pick{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #d6dce5;border-radius:999px;padding:6px 14px;margin:5px 7px 0 0;cursor:pointer;font-size:13px;font-weight:600;color:#475569;background:#fff;transition:border-color .15s,background .15s,color .15s,box-shadow .15s;user-select:none}
+    .pick:hover{border-color:#9fb0c4;background:#f5f8fc}
+    .pick input{display:none}
+    .pick.on{background:#9fb0c4;color:#fff;border-color:#9fb0c4;box-shadow:0 2px 6px rgba(120,140,165,.35)}
+    .pick.on::before{content:"✓";font-weight:800;font-size:12px;margin-right:-1px}
     .btn-ghost{background:rgba(255,255,255,.1);color:#e5edff;border:1px solid rgba(255,255,255,.18);text-decoration:none;display:inline-block;padding:7px 12px;border-radius:9px;font-weight:700;font-size:13px}
     .btn-ghost:hover{background:rgba(255,255,255,.18)}
 
@@ -74,7 +95,7 @@
     .status-draft{background:#fef3c7;color:#92400e}.status-published{background:#dcfce7;color:#166534}.status-locked{background:#fee2e2;color:#991b1b}
 
     /* 分頁 */
-    .tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
+    .tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
     .tab-btn{border:1px solid var(--line);border-radius:11px;padding:12px 8px;background:#fff;color:#475569;font-weight:700;font-size:14px;cursor:pointer;transition:all .15s;box-shadow:var(--shadow)}
     .tab-btn:hover{border-color:#fdba74;color:#c2410c}
     .tab-btn.active{background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(249,115,22,.28)}
@@ -177,6 +198,9 @@
     <label>月份
       <select name="month">{% for m in range(1,13) %}<option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }} 月</option>{% endfor %}</select>
     </label>
+    <label>日期
+      <select name="day">{% for d in range(1, total_days+1) %}<option value="{{ d }}" {% if d == current_day %}selected{% endif %}>{{ d }} 日</option>{% endfor %}</select>
+    </label>
     <button class="btn" type="submit">切換查看</button>
   </form>
 
@@ -184,16 +208,14 @@
   <section class="today" id="todayTopResult">
     <div class="t-head">
       <div>
-        <h2>📌 今日排班</h2>
+        <h2>📌 每日排班</h2>
         <div class="t-meta">
-          {{ selected_department }}｜{{ selected_shift }}｜{{ selected_year }}/{{ selected_month }}/{{ current_day }}｜狀態
-          <span class="status-badge {% if plan_status.status == '已鎖定' %}status-locked{% elif plan_status.status == '已發布' %}status-published{% else %}status-draft{% endif %}">{{ plan_status.status }}</span>
+          {{ selected_department }}｜{{ selected_shift }}｜{{ selected_year }}/{{ selected_month }}/{{ current_day }}{% if plan_status.status == '已鎖定' %}｜🔒 已鎖定{% endif %}
           ｜值日生 <b>{% if today_duty_record %}{{ today_duty_record.值日生 }}{% else %}尚未產生{% endif %}</b>
         </div>
       </div>
       <div class="row">
-        <a class="btn-ghost" href="/today?department={{ selected_department }}&shift={{ selected_shift }}&year={{ selected_year }}&month={{ selected_month }}" target="_blank">📺 今日看板</a>
-        <button type="button" class="btn warn" onclick="reassignSingleDay({{ current_day }})">🔁 重新補位當天</button>
+        <a class="btn-ghost" href="/today?department={{ selected_department }}&shift={{ selected_shift }}&year={{ selected_year }}&month={{ selected_month }}&day={{ current_day }}" target="_blank">📺 今日看板</a>
       </div>
     </div>
     <div class="t-body">
@@ -201,78 +223,47 @@
         {% if today_assignment_records|length > 0 %}
           <div class="t-list">
             {% for r in today_assignment_records %}
-              <div class="t-line"><b>{{ r.人員 }}</b>　{{ r.工作 }}　<span class="mini" style="color:#9fb3d8">（{{ r.方案 }}）</span></div>
+              <div class="t-line"><b>{{ r.人員 }}</b>　<span class="wtag-wrap">{% for t in r.工作.split() %}<span class="wtag">{{ t }}</span>{% endfor %}</span>　<span class="mini" style="color:#9fb3d8">（{{ r.方案 }}）</span></div>
             {% endfor %}
           </div>
         {% else %}
-          <div class="t-empty">尚未產生 {{ selected_department }} {{ selected_shift }} 的整月工作表。請到「智能工作分配」分頁按「產生／更新整月工作表」。</div>
+          <div class="t-empty">尚未產生 {{ selected_department }} {{ selected_shift }} 的整月工作表。請到「內容設定」頁按「產生／更新整月工作表」。</div>
         {% endif %}
       </div>
       <div class="t-clean">
-        <div class="t-sub">本週清潔人員</div>
-        {% for item in weekly_schedule %}
-          <div style="margin-bottom:4px"><span class="chip">{{ item.week }}</span> {{ item.users|join('、') }}</div>
-        {% endfor %}
-        {% if weekly_schedule|length == 0 %}<div class="t-empty" style="padding:0">尚未產生清潔人員</div>{% endif %}
+        {% set wk = [((current_day - 1) // 7) + 1, 4]|min %}
+        <div class="t-sub">清潔人員（第 {{ wk }} 週）</div>
+        {% if weekly_schedule and weekly_schedule|length >= wk %}
+          <div style="margin-bottom:4px">{{ weekly_schedule[wk-1].users|join('、') }}</div>
+        {% else %}
+          <div class="t-empty" style="padding:0">尚未產生清潔人員</div>
+        {% endif %}
       </div>
     </div>
   </section>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="showPage('pagePeople', this)">📅 假表管理</button>
-    <button class="tab-btn" onclick="showPage('pageSchemes', this)">🧩 工作方案</button>
-    <button class="tab-btn" onclick="showPage('pageAssignments', this)">📊 智能工作分配</button>
-    <button class="tab-btn" onclick="showPage('pageSettings', this)">⚙️ 系統設定</button>
+    <button class="tab-btn" onclick="showPage('pageSchemes', this)">📋 內容設定</button>
+    <button class="tab-btn" onclick="showPage('pageSettings', this)">⚙️ 管理員設定</button>
     <button class="tab-btn" onclick="showPage('pageLogs', this)">📜 操作紀錄</button>
   </div>
 
   <!-- ① 假表管理 -->
   <section id="pagePeople" class="page active">
-    <div class="card">
-      <div class="row" style="justify-content:space-between;align-items:flex-end">
-        <form action="/add_calendar_user" method="POST" class="row" style="margin:0">
-          <input type="hidden" name="year" value="{{ selected_year }}">
-          <input type="hidden" name="month" value="{{ selected_month }}">
-          <input type="hidden" name="selected_department" value="{{ selected_department }}">
-          <input type="hidden" name="selected_shift" value="{{ selected_shift }}">
-          <input type="text" name="username" placeholder="新增人員姓名" required autocomplete="off">
-          <select name="department" required>{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
-          <select name="shift" required>{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-          <button type="submit" class="btn success">新增到假表</button>
-        </form>
-      </div>
-      <div class="hint" style="margin-top:8px">部門選錯時，可在下方假表該人員右側按「刪除」，再用正確部門重新新增。</div>
-    </div>
+    {# 新增人員已移至「管理員設定」頁 #}
 
-    <div class="card">
-      <h3>🎨 劃假類別</h3>
-      <div class="hint" style="margin-bottom:8px">先點選假別，再點下方日期格；同一格再點一次取消。劃假即時生效，不會跳出提醒或整頁重整。</div>
-      <div class="leave-chips">
-        {% for lt in leave_types %}
-          <label><input type="radio" name="currentLeaveType" value="{{ lt }}" {% if loop.first %}checked{% endif %}><span class="lt-pill lv-{{ lt }}">{{ lt }}</span></label>
-        {% endfor %}
-      </div>
-      <details class="tool-collapse" style="margin-top:12px;margin-bottom:0">
-        <summary class="tool-summary"><span>🔁 換假 / 換班</span><span class="arr">▼</span></summary>
-        <div class="tool-body">
-          <div class="hint">直接互換兩格假表（例：小明 3 號休 ⇄ 小胖 28 號休）。若這兩天已分配工作，勾選後只重新補位這兩天，不重排整月。</div>
-          <div class="row" style="margin-top:10px">
-            <select id="swapPersonA"><option value="">人員 A</option>{% for u in calendar_groups.get(selected_group_key, []) %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}</select>
-            <select id="swapDayA">{% for d in days %}<option value="{{ d }}">{{ d }} 號</option>{% endfor %}</select>
-            <span class="mini">交換</span>
-            <select id="swapPersonB"><option value="">人員 B</option>{% for u in calendar_groups.get(selected_group_key, []) %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}</select>
-            <select id="swapDayB">{% for d in days %}<option value="{{ d }}">{{ d }} 號</option>{% endfor %}</select>
-            <label class="mini"><input type="checkbox" id="swapReassign" checked> 同步補位這兩天</label>
-            <input id="swapReason" placeholder="原因（鎖定後必填）">
-            <button class="btn warn" type="button" onclick="swapLeave()">確認互換</button>
-          </div>
-        </div>
-      </details>
-    </div>
+    {# 換假已移至「內容設定」頁、值日生名單已移至「管理員設定」頁；劃假類別 chips 併入下方假表卡片 #}
 
     {% for dept in display_departments %}
     <div class="card">
       <h2>📅 {{ dept }}｜{{ selected_shift }}　{{ current_year }} 年 {{ current_month }} 月</h2>
+      <div class="hint" style="margin:6px 0 8px">先點選假別，再點下方日期格；同一格再點一次取消。劃假即時生效，不會跳出提醒或整頁重整。</div>
+      <div class="leave-chips" style="margin-bottom:14px">
+        {% for lt in leave_types %}
+          <label><input type="radio" name="currentLeaveType" value="{{ lt }}" {% if loop.first %}checked{% endif %}><span class="lt-pill lv-{{ lt }}">{{ lt }}</span></label>
+        {% endfor %}
+      </div>
       <div class="calendar-scroll">
         <table>
           <thead><tr><th class="namecol">姓名</th><th class="deptcol">部門</th><th class="statuscol">班別</th><th class="opcol">操作</th>{% for d in days %}<th>{{ d }}</th>{% endfor %}<th class="leave-total-col">休</th><th class="leave-total-col">特</th><th class="leave-total-col">病</th></tr></thead>
@@ -302,23 +293,101 @@
       </div>
     </div>
     {% endfor %}
+
+    {# ⑤ 本月統計總表（工作項目 + 值日生） #}
+    <div class="card">
+      <h2>📊 本月統計總表</h2>
+      <div class="hint">{{ selected_department }}｜{{ selected_shift }}｜{{ selected_year }} 年 {{ selected_month }} 月（整月，與上面選的日期無關）。工作項目數字＝該人本月接到該項目的天數；最後一欄「值日生」＝本月當值日生次數（按班別輪、與部門無關）。0 次也會列出。</div>
+      {% if combined_stats.persons|length == 0 %}
+        <div class="empty" style="margin-top:10px">本月尚無工作分配或值日生紀錄。可先到「內容設定」產生整月工作表。</div>
+      {% else %}
+      <div class="calendar-scroll" style="margin-top:12px">
+        <table style="table-layout:auto;min-width:auto;width:100%">
+          <thead>
+            <tr>
+              <th style="text-align:left">人員</th>
+              {% for col in combined_stats.columns %}<th>{{ col }}</th>{% endfor %}
+              <th>合計</th>
+              <th style="border-left:2px solid #1e293b;color:#fbbf24">值日生</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in combined_stats.persons %}
+            <tr>
+              <td style="text-align:left"><strong>{{ p }}</strong></td>
+              {% set row = combined_stats.stats.get(p, {}) %}
+              {% for col in combined_stats.columns %}
+                {% set n = row.get(col, 0) %}
+                <td style="{% if n == 0 %}color:#475569{% else %}color:#fff{% endif %}">{{ n }}</td>
+              {% endfor %}
+              <td style="color:#fbbf24">{{ row.values()|sum }}</td>
+              {% set dn = combined_stats.duty.get(p, 0) %}
+              <td style="border-left:2px solid #1e293b;{% if dn == 0 %}color:#475569{% else %}color:#fbbf24;font-weight:700{% endif %}">{{ dn }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if combined_stats.extra|length > 0 %}<div class="mini" style="margin-top:8px;color:var(--muted)">註：「{{ combined_stats.extra|join('、') }}」不在目前工作項目庫，但本月實際排到過，已附在右側欄。</div>{% endif %}
+      {% endif %}
+    </div>
   </section>
 
-  <!-- ② 工作方案 -->
+  <!-- ② 內容設定 -->
   <section id="pageSchemes" class="page">
     <div class="card">
-      <h2>🧩 新增工作方案</h2>
-      <div class="hint">輸入幾個工作就自動歸到「幾人上班方案」。例如 3 個工作 = 3 人方案。</div>
-      <div class="row" style="margin-top:12px;align-items:flex-start">
-        <select id="newSchemeDept">{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
-        <select id="newSchemeShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-        <input id="newSchemeName" placeholder="方案名稱，例如 財務三人班" style="flex:1;min-width:180px">
+      <h2>📋 產生整月工作表</h2>
+      <div class="hint">先用「產生／更新整月工作表」一次排好整月，今日面板會自動讀取結果。產生時若該班別本月還沒值日生，會一併自動產生值日生。平均隨機會讓本月分配次數較少的人優先，盡量維持差距在 ±2。</div>
+      <div class="row" style="margin-top:12px">
+        {% if plan_status.status == '已鎖定' %}
+          <button class="btn warn" type="button" onclick="setPlanStatus('草稿中')">🔓 解除鎖定</button>
+          <span class="hint" style="margin:0">本月已鎖定，不能重新產生或補位；要修改先解除鎖定。</span>
+        {% else %}
+          <button class="btn danger" type="button" onclick="setPlanStatus('已鎖定')">🔒 鎖定本月</button>
+          <span class="hint" style="margin:0">排定後可鎖定，避免不小心又按到「產生整月」把結果蓋掉。</span>
+        {% endif %}
       </div>
-      <textarea id="newSchemeTasks" style="margin-top:8px" placeholder="一行一個工作，例如：&#10;核對訂單&#10;查詢後台&#10;回覆異常單"></textarea>
-      <button class="btn success" onclick="addScheme()">新增方案並自動分類</button>
+      <div class="row" style="margin-top:14px">
+        <select id="assignDept">{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
+        <select id="assignShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+        <select id="assignMode"><option value="balanced_random">平均隨機</option><option value="random">隨機工作順序＋平均人員</option><option value="fixed">固定順序</option></select>
+        <button class="btn warn" onclick="generateMonth()">產生／更新整月工作表</button>
+      </div>
     </div>
 
     <div class="card">
+      <h2>🔁 換假 / 換班</h2>
+      <div class="hint">直接互換兩格假表（例：小明 3 號休 ⇄ 小胖 28 號休）。若這兩天已分配工作，勾選後只重新補位這兩天，不重排整月。</div>
+      <div class="row" style="margin-top:10px">
+        <select id="swapPersonA"><option value="">人員 A</option>{% for u in calendar_groups.get(selected_group_key, []) %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}</select>
+        <select id="swapDayA">{% for d in days %}<option value="{{ d }}">{{ d }} 號</option>{% endfor %}</select>
+        <span class="mini">交換</span>
+        <select id="swapPersonB"><option value="">人員 B</option>{% for u in calendar_groups.get(selected_group_key, []) %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}</select>
+        <select id="swapDayB">{% for d in days %}<option value="{{ d }}">{{ d }} 號</option>{% endfor %}</select>
+        <label class="mini"><input type="checkbox" id="swapReassign" checked> 同步補位這兩天</label>
+        <input id="swapReason" placeholder="原因（鎖定後必填）">
+        <button class="btn warn" type="button" onclick="swapLeave()">確認互換</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start">
+    <div class="card" style="margin:0">
+      <h2>🧩 新增工作方案</h2>
+      <div class="hint">先在「選擇工作項目」勾好一位要做的項目，按「＋ 加為一位」收成一個工作位（一個人）；下面會列出已建的工作位。有幾位就是幾人方案。項目來自「管理員設定」的工作項目庫。</div>
+      <div class="row" style="margin-top:12px;align-items:flex-start">
+        <select id="newSchemeDept" onchange="onSchemeShiftChange()">{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
+        <select id="newSchemeShift" onchange="onSchemeShiftChange()">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+        <input id="newSchemeName" placeholder="方案名稱，例如 財務六人班" style="flex:1;min-width:180px">
+      </div>
+      <div style="margin-top:14px;font-weight:700;font-size:13px;color:var(--muted)">選擇工作項目</div>
+      <div id="schemePicker" style="margin-top:6px"></div>
+      <button type="button" class="btn" onclick="addBuiltGroup()" style="margin-top:10px">＋ 加為一位</button>
+      <div style="margin-top:16px;font-weight:700;font-size:13px;color:var(--muted)">已建工作位</div>
+      <div id="builtGroups" style="margin-top:6px"></div>
+      <div style="margin-top:14px"><button class="btn success" onclick="addScheme()">新增方案並自動分類</button></div>
+    </div>
+
+    <div class="card" style="margin:0">
       {% set dept_schemes = work_schemes.get(selected_group_key, {}) %}
       <div class="scheme-head">
         <h2>🏢 {{ selected_department }}｜{{ selected_shift }} 方案</h2>
@@ -344,7 +413,7 @@
                 <button class="btn light" onclick='openInlineSchemeEditor({{ s.id|tojson }})'>編輯</button>
               </div>
               <div class="mini">工作數量：{{ s.task_count }}</div>
-              <ol class="task-list">{% for task in s.tasks %}<li>{{ task }}</li>{% endfor %}</ol>
+              <ol class="task-list">{% for task in s.tasks %}<li>{% for t in task.split() %}<span class="wtag">{{ t }}</span>{% endfor %}</li>{% endfor %}</ol>
               <div class="inline-scheme-editor" id="inline_editor_{{ s.id }}">
                 <input id="inline_name_{{ s.id }}" value="{{ s.name }}" placeholder="方案名稱">
                 <textarea id="inline_tasks_{{ s.id }}" placeholder="一行一個工作">{% for task in s.tasks %}{{ task }}{% if not loop.last %}
@@ -362,131 +431,56 @@
         {% endfor %}
       {% endif %}
     </div>
+    </div>
   </section>
 
   <!-- ③ 排班與歷史 -->
-  <section id="pageAssignments" class="page">
-    <div class="card">
-      <h2>📋 產生整月工作表</h2>
-      <div class="hint">先用「產生／更新整月工作表」一次排好整月，今日面板會自動讀取結果。平均隨機會讓本月分配次數較少的人優先，盡量維持差距在 ±2。</div>
-      <div class="row" style="margin-top:12px">
-        <span style="font-size:13px;font-weight:700">本月狀態</span>
-        <span class="status-badge {% if plan_status.status == '已鎖定' %}status-locked{% elif plan_status.status == '已發布' %}status-published{% else %}status-draft{% endif %}">{{ plan_status.status }}</span>
-        {% if plan_status.status == '已鎖定' %}
-          <button class="btn warn" type="button" onclick="setPlanStatus('草稿中')">解除鎖定</button>
-        {% else %}
-          <button class="btn danger" type="button" onclick="setPlanStatus('已鎖定')">鎖定</button>
-        {% endif %}
-        <button class="btn warn" type="button" onclick="copyPreviousMonth()">複製上月假表</button>
-      </div>
-      <div class="hint" style="margin-top:6px">鎖定後不能重新產生整月或臨時補位；要修改先改回草稿或已發布。</div>
-      <div class="row" style="margin-top:14px">
-        <select id="assignDept">{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
-        <select id="assignShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-        <select id="assignMode"><option value="balanced_random">平均隨機</option><option value="random">隨機工作順序＋平均人員</option><option value="fixed">固定順序</option></select>
-        <button class="btn warn" onclick="generateMonth()">產生／更新整月工作表</button>
-        <button class="btn success" onclick="reassignSingleDay({{ current_day }})">🔁 重新補位當天</button>
-      </div>
-
-    </div>
-
-    <div class="card">
-      <h2>🗂️ 工作分配歷史查詢</h2>
-      <div class="hint">不直接顯示整月，請先選日期區間、部門與姓名再查詢。</div>
-      <div class="row" style="margin-top:12px">
-        <select id="historyDept"><option value="">全部部門</option>{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
-        <select id="historyShift"><option value="">全部班別</option>{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-        <select id="historyPerson"><option value="">全部姓名</option>{% for person in history_people %}<option value="{{ person }}">{{ person }}</option>{% endfor %}</select>
-        <input type="date" id="historyStart" value="{{ selected_year }}-{{ '%02d'|format(selected_month) }}-01">
-        <input type="date" id="historyEnd" value="{{ selected_year }}-{{ '%02d'|format(selected_month) }}-{{ '%02d'|format(current_day) }}">
-        <button class="btn" onclick="searchHistory()">查詢歷史</button>
-        <button class="btn light" onclick="clearHistoryView()">清空</button>
-      </div>
-      <div id="historyRangeHint" class="notice" style="margin-top:12px;display:none"></div>
-      <div class="grid2" style="margin-top:12px">
-        <div>
-          <h3>區間每人分配次數</h3>
-          <div id="historyStatsBox" class="scroll">
-            <table><thead><tr><th>部門</th><th>班別</th><th>人員</th><th>次數</th></tr></thead><tbody><tr><td colspan="4" class="empty">請先查詢</td></tr></tbody></table>
-          </div>
-        </div>
-        <div>
-          <h3>查詢結果</h3>
-          <div id="historyTableBox" class="scroll">
-            <table><thead><tr><th>日期</th><th>部門</th><th>班別</th><th>人員</th><th>工作</th><th>方案</th><th>方式</th><th>產生時間</th></tr></thead><tbody><tr><td colspan="8" class="empty">尚未查詢</td></tr></tbody></table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>🧹 值日生與清潔排班</h2>
-      <div class="notice" style="margin-bottom:12px">辦公室與居家人員分開時，這裡輸入目前在公司的人員。每日值日生與每週清潔會依「班別」各自獨立產生，因為早／中／晚班人員不同。</div>
-      <form action="/add_duty_user" method="POST" class="row">
-        <input type="text" name="username" placeholder="值日生姓名" required autocomplete="off">
-        <select name="shift" required>{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-        <button class="btn">新增值日生</button>
-      </form>
-      <div style="margin:10px 0">
-        {% for sh in shifts %}
-          <div style="margin-bottom:6px">
-            <span class="mini" style="font-weight:700;color:#475569">{{ sh }}：</span>
-            {% for user in duty_members_by_shift.get(sh, []) %}<span class="tag">{{ user }} <a class="x" href="/delete_duty_user/{{ sh }}/{{ user }}" onclick="return confirm('確定刪除 {{ sh }} 的 {{ user }} 嗎？')">×</a></span>{% endfor %}
-            {% if duty_members_by_shift.get(sh, [])|length == 0 %}<span class="mini">（尚無）</span>{% endif %}
-          </div>
-        {% endfor %}
-      </div>
-      <div class="row">
-        <span class="mini" style="font-weight:700">產生班別</span>
-        <select id="dutyGenShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-        <button class="btn success" onclick="generateSchedule()">一鍵產生本月每日值日生</button>
-        <button class="btn warn" onclick="clearSchedule()">清除畫面結果</button>
-        <button class="btn light" onclick="resetCounts()">重置公平計數</button>
-      </div>
-
-      <div class="grid2" style="margin-top:14px">
-        <div>
-          <h3>每日值日生查詢</h3>
-          <div class="row">
-            <select id="dutyShift"><option value="">全部班別</option>{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
-            <select id="dutyPerson"><option value="">全部姓名</option>{% for person in duty_history_people %}<option value="{{ person }}">{{ person }}</option>{% endfor %}</select>
-            <input type="date" id="dutyStart" value="{{ selected_year }}-{{ '%02d'|format(selected_month) }}-01">
-            <input type="date" id="dutyEnd" value="{{ selected_year }}-{{ '%02d'|format(selected_month) }}-{{ '%02d'|format(current_day) }}">
-            <button class="btn" onclick="searchDutyHistory()">查詢</button>
-            <button class="btn light" onclick="clearDutyHistoryView()">清空</button>
-          </div>
-          <div id="dutyHint" class="notice" style="margin-top:10px;display:none"></div>
-        </div>
-        <div>
-          <h3>每週清潔人員</h3>
-          <div class="scroll">
-            <table><thead><tr><th>週次</th><th>清潔人員</th></tr></thead><tbody>{% for item in weekly_schedule %}<tr><td>{{ item.week }}</td><td><strong>{{ item.users|join('、') }}</strong></td></tr>{% endfor %}{% if weekly_schedule|length==0 %}<tr><td colspan="2" class="empty">尚未產生</td></tr>{% endif %}</tbody></table>
-          </div>
-        </div>
-      </div>
-      <div class="grid2" style="margin-top:12px">
-        <div class="scroll" id="dutyStatsBox"><table><thead><tr><th>值日生</th><th>區間值日次數</th></tr></thead><tbody><tr><td colspan="2" class="empty">請先查詢</td></tr></tbody></table></div>
-        <div class="scroll" id="dutyTableBox"><table><thead><tr><th>日期</th><th>星期</th><th>班別</th><th>值日生</th><th>產生時間</th></tr></thead><tbody><tr><td colspan="5" class="empty">尚未查詢</td></tr></tbody></table></div>
-      </div>
-
-      <details class="tool-collapse" style="margin-top:12px;margin-bottom:0">
-        <summary class="tool-summary"><span>📅 本月每日值日生總表</span><span class="arr">▼</span></summary>
-        <div class="tool-body">
-          <div class="scroll">
-            <table><thead><tr><th>日期</th><th>星期</th><th>值日生</th></tr></thead><tbody>
-              {% for date, items in month_duty_records|groupby('日期') %}<tr><td>{{ date }}</td><td>{{ items[0].星期 }}</td><td><strong>{{ items|map(attribute='值日生')|join('、') }}</strong></td></tr>{% endfor %}
-              {% if month_duty_records|length == 0 %}<tr><td colspan="3" class="empty">尚未產生每日值日生</td></tr>{% endif %}
-            </tbody></table>
-          </div>
-        </div>
-      </details>
-    </div>
-
-  </section>
-
-
   <!-- ④ 系統設定 -->
   <section id="pageSettings" class="page">
+    <div class="card">
+      <h2>👥 假表人員名單</h2>
+      <div class="hint">新增劃假人員（選部門班別）。刪除請到「假表管理」頁該人員右側按「刪除」。</div>
+      <form action="/add_calendar_user" method="POST" class="row" style="margin-top:12px">
+        <input type="hidden" name="year" value="{{ selected_year }}">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <input type="hidden" name="selected_department" value="{{ selected_department }}">
+        <input type="hidden" name="selected_shift" value="{{ selected_shift }}">
+        <input type="text" name="username" placeholder="新增人員姓名" required autocomplete="off">
+        <select name="department" required>{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
+        <select name="shift" required>{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+        <button type="submit" class="btn success">新增到假表</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>🧹 {{ selected_shift }} 值日生名單</h2>
+      <div class="hint">依目前班別（{{ selected_shift }}）管理；要管別班請用上方「切換查看」換班別。</div>
+      <form action="/add_duty_user" method="POST" class="row" style="margin-top:12px">
+        <input type="hidden" name="year" value="{{ selected_year }}">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <input type="hidden" name="selected_department" value="{{ selected_department }}">
+        <input type="hidden" name="selected_shift" value="{{ selected_shift }}">
+        <input type="hidden" name="shift" value="{{ selected_shift }}">
+        <input type="text" name="username" placeholder="值日生姓名（{{ selected_shift }}）" required autocomplete="off">
+        <button class="btn success">新增到 {{ selected_shift }}</button>
+      </form>
+      <div style="margin-top:8px">
+        {% for user in duty_members_by_shift.get(selected_shift, []) %}<span class="tag">{{ user }} <a class="x" href="/delete_duty_user/{{ selected_shift }}/{{ user }}?department={{ selected_department }}&year={{ selected_year }}&month={{ selected_month }}" onclick="return confirm('確定刪除 {{ selected_shift }} 的 {{ user }} 嗎？')">×</a></span>{% endfor %}
+        {% if duty_members_by_shift.get(selected_shift, [])|length == 0 %}<span class="mini">（{{ selected_shift }} 目前尚無值日生，從上面新增）</span>{% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <h2>🏷️ 工作項目庫</h2>
+      <div class="hint">每個部門 × 班別各自一份。先選好下面的部門與班別，再新增／刪除該組的項目；前台會自動以標籤呈現。</div>
+      <div class="row" style="margin-top:12px">
+        <select id="wiDept" onchange="renderWorkItems()">{% for dept in departments %}<option value="{{ dept }}" {% if dept == selected_department %}selected{% endif %}>{{ dept }}</option>{% endfor %}</select>
+        <select id="wiShift" onchange="renderWorkItems()">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+      </div>
+      <div id="workItemList" style="margin-top:10px;display:flex;flex-wrap:wrap;align-items:center"></div>
+      <div class="row" style="margin-top:12px">
+        <input id="newWorkItem" placeholder="輸入項目名稱，例如 HS、買卡、DL1688（勿含空格）" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){event.preventDefault();addWorkItem();}">
+        <button class="btn success" onclick="addWorkItem()">＋ 新增項目</button>
+      </div>
+    </div>
     <div class="card">
       <h2>⚙️ 系統設定</h2>
       <div class="hint">調整系統名稱、管理員密碼、部門、班別時間與每週清潔人數，儲存後立即套用。</div>
@@ -506,24 +500,22 @@
           <textarea name="departments" style="min-height:70px;margin-top:6px">{{ system_settings.departments|join('\n') }}</textarea>
         </div>
         <div style="margin-top:12px">
-          <h3>🕘 班別時間與每日值日生人數</h3>
-          <div class="hint" style="margin-bottom:8px">「每日值日生人數」是各班每天要排幾位值日生（例如晚班填 2，晚班就每天排 2 位）；填 0 表示該班不排值日生。</div>
+          <h3>🕘 班別時間與每日值日生 / 每週清潔人數</h3>
+          <div class="hint" style="margin-bottom:8px">「每日值日生人數」是各班每天要排幾位值日生（例如晚班填 2 就每天排 2 位）；填 0 表示該班不排值日生。「每週清潔人數」是各班每週要排幾位清潔，早／中／晚班可各自不同。</div>
           <div class="scroll">
             <table>
-              <thead><tr><th>班別名稱</th><th>開始</th><th>結束</th><th>每日值日生人數</th></tr></thead>
+              <thead><tr><th>班別名稱</th><th>開始</th><th>結束</th><th>每日值日生人數</th><th>每週清潔人數</th></tr></thead>
               <tbody>
                 {% for sh in system_settings.shifts %}
-                <tr><td><input name="shift_name" value="{{ sh.name }}" style="width:100%"></td><td><input name="shift_start" value="{{ sh.start }}" placeholder="08:00" style="width:100%"></td><td><input name="shift_end" value="{{ sh.end }}" placeholder="16:00" style="width:100%"></td><td><input type="number" name="shift_duty_count" min="0" value="{{ sh.duty_count|default(1) }}" style="width:100%"></td></tr>
+                <tr><td><input name="shift_name" value="{{ sh.name }}" style="width:100%"></td><td><input name="shift_start" value="{{ sh.start }}" placeholder="08:00" style="width:100%"></td><td><input name="shift_end" value="{{ sh.end }}" placeholder="16:00" style="width:100%"></td><td><input type="number" name="shift_duty_count" min="0" value="{{ sh.duty_count|default(1) }}" style="width:100%"></td><td><input type="number" name="shift_cleaner_count" min="1" value="{{ sh.cleaner_count|default(3) }}" style="width:100%"></td></tr>
                 {% endfor %}
-                <tr><td><input name="shift_name" placeholder="新增班別" style="width:100%"></td><td><input name="shift_start" placeholder="開始" style="width:100%"></td><td><input name="shift_end" placeholder="結束" style="width:100%"></td><td><input type="number" name="shift_duty_count" min="0" placeholder="1" style="width:100%"></td></tr>
+                <tr><td><input name="shift_name" placeholder="新增班別" style="width:100%"></td><td><input name="shift_start" placeholder="開始" style="width:100%"></td><td><input name="shift_end" placeholder="結束" style="width:100%"></td><td><input type="number" name="shift_duty_count" min="0" placeholder="1" style="width:100%"></td><td><input type="number" name="shift_cleaner_count" min="1" placeholder="3" style="width:100%"></td></tr>
               </tbody>
             </table>
           </div>
         </div>
-        <div style="margin-top:12px;max-width:260px">
-          <label style="font-size:13px;font-weight:700">每週清潔人數</label>
-          <input type="number" name="weekly_cleaner_count" min="1" value="{{ system_settings.weekly_cleaner_count }}" style="width:100%;margin-top:6px">
-        </div>
+        <!-- 每週清潔人數已改為各班別獨立設定（見上表最後一欄）；保留隱藏欄位作為新班別的預設值 -->
+        <input type="hidden" name="weekly_cleaner_count" value="{{ system_settings.weekly_cleaner_count }}">
         <!-- 自動備份在背景持續執行以保護資料，前台不再顯示相關設定 -->
         <input type="hidden" name="auto_backup_enabled" value="on">
         <input type="hidden" name="auto_backup_keep" value="{{ system_settings.auto_backup_keep }}">
@@ -532,6 +524,26 @@
         </div>
       </form>
     </div>
+
+    <details class="tool-collapse" style="margin-bottom:0">
+      <summary class="tool-summary"><span>⚙️ 暫時收藏</span><span class="arr">▼</span></summary>
+      <div class="tool-body">
+        <div class="hint">不常用、但偶爾需要的功能放這裡，保持主畫面清爽。以下動作都會套用到目前「切換查看」選定的部門班別與月份。</div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn warn" type="button" onclick="copyPreviousMonth()">📋 複製上月假表</button>
+          <span class="mini">把上個月的劃假標記貼到本月（人員固定、不受影響）。</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn success" type="button" onclick="reassignSingleDay({{ current_day }})">🔁 重新補位當天（{{ current_day }} 日）</button>
+          <span class="mini">只重排目前選定那一天，不動整月。臨時請假其實已會自動補位。</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <select id="dutyGenShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+          <button class="btn light" type="button" onclick="generateSchedule()">🧹 重新產生本班值日生</button>
+          <span class="mini">值日生通常跟著工作表自動產生；改了名單想重排才用。</span>
+        </div>
+      </div>
+    </details>
   </section>
 
   <!-- ⑤ 操作紀錄 -->
@@ -594,11 +606,54 @@ function showPage(id, btn){
 }
 function restoreActivePage(){
   const saved = localStorage.getItem('nightShiftActivePage') || 'pagePeople';
-  const btnMap = {pagePeople:0,pageSchemes:1,pageAssignments:2,pageSettings:3,pageLogs:4};
+  const btnMap = {pagePeople:0,pageSchemes:1,pageSettings:2,pageLogs:3};
   const btn = document.querySelectorAll('.tab-btn')[btnMap[saved] || 0];
   showPage(saved, btn);
 }
 window.addEventListener('DOMContentLoaded', restoreActivePage);
+
+// ===== 工作標籤 + 工作項目庫（每部門班別各自一份、統一顏色）=====
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function tagsHTML(s){
+  s=String(s==null?'':s).trim();
+  if(!s) return '';
+  return s.split(/\s+/).filter(Boolean).map(t=>'<span class="wtag">'+escapeHtml(t)+'</span>').join('');
+}
+
+var WORK_ITEMS_MAP = {{ work_items_map|tojson }};
+function wiGroupKey(){
+  const d=document.getElementById('wiDept'), s=document.getElementById('wiShift');
+  return (d?d.value:'')+'__'+(s?s.value:'');
+}
+function renderWorkItems(){
+  const box=document.getElementById('workItemList');
+  if(!box) return;
+  const list=WORK_ITEMS_MAP[wiGroupKey()]||[];
+  if(!list.length){ box.innerHTML='<span class="mini">這個部門班別目前還沒有項目，先在下面新增。</span>'; return; }
+  box.innerHTML=list.map(it=>'<span class="wtag-del"><span class="wtag">'+escapeHtml(it.name)+'</span><button type="button" class="wtag-x" data-name="'+escapeHtml(it.name)+'" onclick="deleteWorkItem(this.dataset.name)" title="刪除這個項目">×</button></span>').join('');
+}
+window.addEventListener('DOMContentLoaded', renderWorkItems);
+
+function addWorkItem(){
+  const el=document.getElementById('newWorkItem');
+  const name=(el.value||'').trim();
+  if(!name){ alert('請輸入項目名稱'); return; }
+  const dept=document.getElementById('wiDept').value, shift=document.getElementById('wiShift').value;
+  fetch('/api/add_work_item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,name:name})})
+  .then(r=>r.json()).then(d=>{
+    if(d.status==='success'){ WORK_ITEMS_MAP[dept+'__'+shift]=d.items||[]; el.value=''; renderWorkItems(); }
+    else alert(d.message||'新增失敗');
+  }).catch(e=>alert('發生錯誤：'+e));
+}
+function deleteWorkItem(name){
+  const dept=document.getElementById('wiDept').value, shift=document.getElementById('wiShift').value;
+  if(!confirm('確定刪除「'+dept+'｜'+shift+'」的項目「'+name+'」？')) return;
+  fetch('/api/delete_work_item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,name:name})})
+  .then(r=>r.json()).then(d=>{
+    if(d.status==='success'){ WORK_ITEMS_MAP[dept+'__'+shift]=d.items||[]; renderWorkItems(); }
+    else alert(d.message||'刪除失敗');
+  }).catch(e=>alert('發生錯誤：'+e));
+}
 
 function changeDeptSchemeCount(cardIndex, count){
   document.querySelectorAll('.dept-scheme-bucket[data-dept-card="'+cardIndex+'"]').forEach(b=>{
@@ -620,7 +675,7 @@ function reassignSingleDay(day){
     if(!reason.trim()){alert('鎖定班表補位必須填寫原因');return;}
   }
   fetch('/api/reassign_day',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,day:day,mode:mode,year:SELECTED_YEAR,month:SELECTED_MONTH,reason:reason})})
-  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageAssignments');window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}})
+  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}})
   .catch(e=>alert('發生錯誤：'+e));
 }
 
@@ -635,7 +690,7 @@ function toggleLeave(btn){
     updateLeaveTotals(btn);
     recalcDailySummary();
     if(data.reassign && data.reassign.length){
-      showToast('🔁 ' + data.reassign.join('；') + '（重整頁面或進今日看板可看最新工作分配）');
+      showToast('🔁 ' + data.reassign.join('；') + '（重整頁面或進今日看板可看最新工作分配與值日生）');
     }
   }).catch(e=>alert('發生錯誤：'+e));
 }
@@ -685,7 +740,49 @@ function recalcDailySummary(){
 
 function deleteCalendarUser(name, dept, shift){if(!confirm('確定要刪除「'+name+'」嗎？\n刪除後此人會從假表移除，也不會再被分配工作。'))return;fetch('/api/delete_member',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,department:dept,shift:shift,year:SELECTED_YEAR,month:SELECTED_MONTH})}).then(r=>r.json()).then(d=>{alert(d.message||'完成');if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pagePeople');location.reload();}}).catch(e=>alert('發生錯誤：'+e));}
 
-function addScheme(){const dept=document.getElementById('newSchemeDept').value;const shift=document.getElementById('newSchemeShift').value;const name=document.getElementById('newSchemeName').value;const tasks=document.getElementById('newSchemeTasks').value;fetch('/api/add_work_scheme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,scheme_name:name,tasks})}).then(r=>r.json()).then(d=>{alert(d.message||'完成');if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');location.reload();}}).catch(e=>alert('發生錯誤：'+e));}
+var BUILT_GROUPS = [];
+function schemeItems(){
+  const d=document.getElementById('newSchemeDept').value, s=document.getElementById('newSchemeShift').value;
+  return WORK_ITEMS_MAP[d+'__'+s]||[];
+}
+function renderSchemePicker(){
+  const box=document.getElementById('schemePicker'); if(!box) return;
+  const items=schemeItems();
+  if(!items.length){ box.innerHTML='<span class="mini">這個部門班別還沒有工作項目，請先到「管理員設定 → 工作項目庫」新增。</span>'; return; }
+  box.innerHTML=items.map(it=>'<label class="pick"><input type="checkbox" value="'+escapeHtml(it.name)+'" onchange="this.closest(\'.pick\').classList.toggle(\'on\',this.checked)">'+escapeHtml(it.name)+'</label>').join('');
+}
+function getPickedItems(){
+  return [...document.querySelectorAll('#schemePicker input[type=checkbox]:checked')].map(c=>c.value);
+}
+function clearPicker(){
+  document.querySelectorAll('#schemePicker input[type=checkbox]').forEach(c=>{ c.checked=false; const p=c.closest('.pick'); if(p) p.classList.remove('on'); });
+}
+function renderBuiltGroups(){
+  const box=document.getElementById('builtGroups'); if(!box) return;
+  if(!BUILT_GROUPS.length){ box.innerHTML='<span class="mini">還沒有工作位。在上面勾選項目後按「＋ 加為一位」。</span>'; return; }
+  box.innerHTML=BUILT_GROUPS.map((g,i)=>'<div class="built-group"><span class="bg-title">工作'+String.fromCharCode(65+i)+'</span>'+g.map(t=>'<span class="wtag">'+escapeHtml(t)+'</span>').join('')+'<button type="button" class="bg-del" onclick="removeBuiltGroup('+i+')">刪除</button></div>').join('');
+}
+function addBuiltGroup(){
+  const picked=getPickedItems();
+  if(!picked.length){ alert('請先在上面勾選至少一個工作項目'); return; }
+  BUILT_GROUPS.push(picked);
+  clearPicker();
+  renderBuiltGroups();
+}
+function removeBuiltGroup(i){ BUILT_GROUPS.splice(i,1); renderBuiltGroups(); }
+function onSchemeShiftChange(){ BUILT_GROUPS=[]; renderBuiltGroups(); renderSchemePicker(); }
+function addScheme(){
+  const dept=document.getElementById('newSchemeDept').value;
+  const shift=document.getElementById('newSchemeShift').value;
+  const name=(document.getElementById('newSchemeName').value||'').trim();
+  if(!name){ alert('請輸入方案名稱'); return; }
+  if(getPickedItems().length){ if(!confirm('上面還有勾選的項目沒按「＋ 加為一位」，要忽略它們直接送出嗎？')) return; }
+  if(!BUILT_GROUPS.length){ alert('請至少加一位（勾選項目後按「＋ 加為一位」）'); return; }
+  const tasksArr=BUILT_GROUPS.map(g=>g.join(' '));
+  fetch('/api/add_work_scheme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,scheme_name:name,tasks:tasksArr.join('\n')})})
+  .then(r=>r.json()).then(d=>{alert(d.message||'完成');if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');location.reload();}}).catch(e=>alert('發生錯誤：'+e));
+}
+window.addEventListener('DOMContentLoaded', function(){ if(document.getElementById('schemePicker')){ renderSchemePicker(); renderBuiltGroups(); } });
 function openInlineSchemeEditor(schemeId){
   document.querySelectorAll('.inline-scheme-editor').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.scheme-item').forEach(x=>x.classList.remove('active'));
@@ -715,7 +812,7 @@ function setPlanStatus(status){
   const shift=document.getElementById('assignShift')?document.getElementById('assignShift').value:SELECTED_SHIFT;
   if(status==='已鎖定' && !confirm('確定要鎖定 '+dept+' '+shift+' '+SELECTED_YEAR+'/'+SELECTED_MONTH+' 的班表嗎？\n鎖定後不能重新產生整月或臨時補位。')) return;
   fetch('/api/set_plan_status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,year:SELECTED_YEAR,month:SELECTED_MONTH,status:status})})
-  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageAssignments'); window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}})
+  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes'); window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}})
   .catch(e=>alert('發生錯誤：'+e));
 }
 function copyPreviousMonth(){
@@ -726,7 +823,7 @@ function copyPreviousMonth(){
   .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pagePeople'); window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}})
   .catch(e=>alert('發生錯誤：'+e));
 }
-function generateMonth(){const dept=document.getElementById('assignDept').value;const shift=document.getElementById('assignShift').value;if(!confirm('確定要產生／更新 '+dept+' '+shift+' 本月整月工作表？會先覆蓋這個部門本月舊的工作分配，再寫入新的整月結果。'))return;fetch('/api/generate_month_assignments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,mode:document.getElementById('assignMode').value,year:SELECTED_YEAR,month:SELECTED_MONTH})}).then(r=>r.json()).then(d=>{let msg=d.message||'完成';if(d.errors&&d.errors.length)msg+='\n\n未產生項目：\n'+d.errors.join('\n');alert(msg);if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageAssignments');window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}}).catch(e=>alert('發生錯誤：'+e));}
+function generateMonth(){const dept=document.getElementById('assignDept').value;const shift=document.getElementById('assignShift').value;if(!confirm('確定要產生／更新 '+dept+' '+shift+' 本月整月工作表？會先覆蓋這個部門本月舊的工作分配，再寫入新的整月結果。'))return;fetch('/api/generate_month_assignments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:dept,shift:shift,mode:document.getElementById('assignMode').value,year:SELECTED_YEAR,month:SELECTED_MONTH})}).then(r=>r.json()).then(d=>{let msg=d.message||'完成';if(d.errors&&d.errors.length)msg+='\n\n未產生項目：\n'+d.errors.join('\n');alert(msg);if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');window.location.href='/?department='+encodeURIComponent(dept)+'&shift='+encodeURIComponent(shift)+'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH;}}).catch(e=>alert('發生錯誤：'+e));}
 
 function renderHistory(records, stats){
   const statsBody=document.querySelector('#historyStatsBox tbody'), tableBody=document.querySelector('#historyTableBox tbody');
@@ -734,7 +831,7 @@ function renderHistory(records, stats){
   statsBody.innerHTML = (!stats || stats.length===0) ? '<tr><td colspan="4" class="empty">此區間沒有統計</td></tr>'
     : stats.map(s => '<tr><td>'+s.部門+'</td><td>'+s.班別+'</td><td>'+s.人員+'</td><td><strong>'+s.區間分配次數+'</strong></td></tr>').join('');
   tableBody.innerHTML = (!records || records.length===0) ? '<tr><td colspan="8" class="empty">此區間沒有紀錄</td></tr>'
-    : records.map(r => '<tr><td>'+r.日期+'</td><td>'+r.部門+'</td><td>'+r.班別+'</td><td>'+r.人員+'</td><td>'+r.工作+'</td><td>'+r.方案+'</td><td>'+r.分配方式+'</td><td>'+r.產生時間+'</td></tr>').join('');
+    : records.map(r => '<tr><td>'+r.日期+'</td><td>'+r.部門+'</td><td>'+r.班別+'</td><td>'+r.人員+'</td><td>'+tagsHTML(r.工作)+'</td><td>'+r.方案+'</td><td>'+r.分配方式+'</td><td>'+r.產生時間+'</td></tr>').join('');
 }
 function searchHistory(){
   const start=document.getElementById('historyStart').value, end=document.getElementById('historyEnd').value;
@@ -798,7 +895,7 @@ function swapWork(){
   if(personA===personB){alert('請選擇不同人員');return;}
   if(!confirm('確定交換 '+SELECTED_MONTH+'/'+day+' '+personA+' 與 '+personB+' 的工作嗎？')) return;
   fetch('/api/swap_work',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department:SELECTED_DEPARTMENT,shift:SELECTED_SHIFT,year:SELECTED_YEAR,month:SELECTED_MONTH,day:day,person_a:personA,person_b:personB,reason:reason})})
-  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageAssignments');location.reload();}})
+  .then(r=>r.json()).then(d=>{alert(d.message||'完成'); if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');location.reload();}})
   .catch(e=>alert('發生錯誤：'+e));
 }
 
@@ -812,9 +909,9 @@ function searchOperationLogs(){
   }).catch(e=>alert('發生錯誤：'+e));
 }
 
-function generateSchedule(){const shift=document.getElementById('dutyGenShift')?document.getElementById('dutyGenShift').value:SELECTED_SHIFT;fetch('/api/generate_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:SELECTED_YEAR,month:SELECTED_MONTH,shift:shift})}).then(r=>r.json()).then(d=>{if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageAssignments');alert(d.message||'排班完成，已存入歷史');location.reload();}else alert(d.message||'排班失敗')}).catch(e=>alert('發生錯誤：'+e));}
-function clearSchedule(){const shift=document.getElementById('dutyGenShift')?document.getElementById('dutyGenShift').value:SELECTED_SHIFT;fetch('/api/clear_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:SELECTED_YEAR,month:SELECTED_MONTH,shift:shift})}).then(r=>r.json()).then(d=>{localStorage.setItem('nightShiftActivePage','pageAssignments');alert(d.message||'已清除');location.reload();}).catch(e=>alert('發生錯誤：'+e));}
-function resetCounts(){if(!confirm('確定重置公平計數？'))return;fetch('/api/reset_counts',{method:'POST'}).then(r=>r.json()).then(d=>{localStorage.setItem('nightShiftActivePage','pageAssignments');alert(d.message||'已重置');location.reload();}).catch(e=>alert('發生錯誤：'+e));}
+function generateSchedule(){const shift=document.getElementById('dutyGenShift')?document.getElementById('dutyGenShift').value:SELECTED_SHIFT;fetch('/api/generate_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:SELECTED_YEAR,month:SELECTED_MONTH,shift:shift})}).then(r=>r.json()).then(d=>{if(d.status==='success'){localStorage.setItem('nightShiftActivePage','pageSchemes');alert(d.message||'排班完成，已存入歷史');location.reload();}else alert(d.message||'排班失敗')}).catch(e=>alert('發生錯誤：'+e));}
+function clearSchedule(){const shift=document.getElementById('dutyGenShift')?document.getElementById('dutyGenShift').value:SELECTED_SHIFT;fetch('/api/clear_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:SELECTED_YEAR,month:SELECTED_MONTH,shift:shift})}).then(r=>r.json()).then(d=>{localStorage.setItem('nightShiftActivePage','pageSchemes');alert(d.message||'已清除');location.reload();}).catch(e=>alert('發生錯誤：'+e));}
+function resetCounts(){if(!confirm('確定重置公平計數？'))return;fetch('/api/reset_counts',{method:'POST'}).then(r=>r.json()).then(d=>{localStorage.setItem('nightShiftActivePage','pageSchemes');alert(d.message||'已重置');location.reload();}).catch(e=>alert('發生錯誤：'+e));}
 </script>
 </body>
 </html>
