@@ -734,15 +734,13 @@ def build_duty_stats(shift, year, month):
 
 def build_combined_stats(department, shift, year, month):
     """合併『工作項目統計』與『值日生次數』成同一張表。
-    列＝該部門班別有被排工作的人 ∪ 該班別值日生名單；
-    欄＝工作項目們＋工作合計＋值日生次數。"""
+    列＝該部門班別有被排工作的人（只算本部門班別，不混入其他部門）。
+    欄＝工作項目們＋工作合計＋值日生次數。
+    值日生雖按班別輪，但這裡只對「本部門班別的人」顯示其值日次數，
+    不會把別部門的晚班值日生塞進本部門的表。"""
     item = build_item_stats(department, shift, year, month)
     duty = dict(build_duty_stats(shift, year, month))
-    persons = list(item["persons"])
-    for p in duty:
-        if p not in persons:
-            persons.append(p)
-    persons.sort()
+    persons = sorted(item["persons"])
     return {
         "columns": item["columns"],
         "persons": persons,
