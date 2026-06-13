@@ -231,12 +231,38 @@
         {% endif %}
       </div>
       <div class="t-clean">
-        {% set wk = [((current_day - 1) // 7) + 1, 4]|min %}
-        <div class="t-sub">清潔人員（第 {{ wk }} 週）</div>
-        {% if weekly_schedule and weekly_schedule|length >= wk %}
-          <div style="margin-bottom:4px">{{ weekly_schedule[wk-1].users|join('、') }}</div>
+        <div class="t-sub" style="display:flex;align-items:center;justify-content:space-between">
+          <span>🧹 本月清潔輪值</span>
+          {% if weekly_clean_participants %}<span style="font-weight:600;color:#7f93b5">共 {{ weekly_clean_participants }} 人</span>{% endif %}
+        </div>
+        {% if weekly_clean_view and weekly_clean_participants > 0 %}
+        {% set dept_color = {
+          '財務': ('rgba(56,130,246,.20)', '#93c5fd'),
+          'BBP':  ('rgba(34,197,94,.18)',  '#86efac'),
+          '四方': ('rgba(245,158,11,.18)', '#fcd34d')
+        } %}
+        <div style="display:flex;flex-direction:column;gap:6px">
+          {% for wk in weekly_clean_view %}
+          <div style="border-radius:9px;padding:7px 9px;{% if wk.current %}background:rgba(125,211,252,.12);border:1px solid rgba(125,211,252,.28){% else %}background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07){% endif %}">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+              <span style="font-size:12.5px;font-weight:700;color:{% if wk.current %}#7dd3fc{% else %}#cbd5e1{% endif %}">{{ wk.label }}</span>
+              <span style="font-size:11px;color:#7f93b5">{{ wk.date_range }}</span>
+              {% if wk.current %}<span style="font-size:10px;font-weight:700;color:#0f172a;background:#7dd3fc;border-radius:5px;padding:0 5px">本週</span>{% endif %}
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              {% for u in wk.users %}
+              {% set c = dept_color.get(u.dept, ('rgba(148,163,184,.18)', '#cbd5e1')) %}
+              <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.06);border-radius:999px;padding:2px 9px 2px 2px;font-size:12px;font-weight:600;color:#e5edff">
+                <span style="width:20px;height:20px;border-radius:50%;background:{{ c[0] }};color:{{ c[1] }};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">{{ u.dept[:1] if u.dept else u.name[-1:] }}</span>{{ u.name }}
+              </span>
+              {% endfor %}
+              {% if not wk.users %}<span style="font-size:12px;color:#7f93b5">—</span>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
         {% else %}
-          <div class="t-empty" style="padding:0">尚未產生清潔人員</div>
+          <div class="t-empty" style="padding:6px 0 0">尚未產生清潔人員</div>
         {% endif %}
       </div>
     </div>
