@@ -2222,8 +2222,32 @@ def index():
     anomalies = build_anomaly_report(now.year, now.month, selected_department, selected_shift, ctx=anomaly_ctx)
     combined_stats = build_combined_stats(selected_department, selected_shift, now.year, now.month)
 
+    # 每週清潔卡片：替每位清潔人員補上「部門」「該週日期範圍」「是否本週」
+    weekly_raw = get_weekly_clean(now.year, now.month, selected_shift)
+    name_dept = {}
+    for u in calendar_users:
+        if u.get("shift") == selected_shift and u.get("name"):
+            name_dept.setdefault(u["name"], u.get("dept", ""))
+    weekly_clean_view = []
+    n_weeks = len(weekly_raw)
+    for i, wk in enumerate(weekly_raw):
+        start = i * 7 + 1
+        end = num_days if i == n_weeks - 1 else min(start + 6, num_days)
+        users = [{"name": nm, "dept": name_dept.get(nm, "")} for nm in wk.get("users", [])]
+        is_current = (now.year == real_now.year and now.month == real_now.month
+                      and start <= real_now.day <= end)
+        weekly_clean_view.append({
+            "label": wk.get("week", f"第 {i+1} 週"),
+            "date_range": f"{now.month}/{start} – {now.month}/{end}",
+            "users": users,
+            "current": is_current,
+        })
+    weekly_clean_participants = len({u["name"] for wk in weekly_clean_view for u in wk["users"]})
+
     return render_template(
         "index.html",
+        weekly_clean_view=weekly_clean_view,
+        weekly_clean_participants=weekly_clean_participants,
         current_year=now.year,
         current_month=now.month,
         current_day=sel_day,
