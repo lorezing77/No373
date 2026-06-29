@@ -182,6 +182,8 @@
     .pvtab tr.day-row td:last-child,.pvtab tr.head-row th:last-child{border-right:none}
 
     /* 每月清潔人員（第五頁分頁）*/
+    #cleanBoard{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:14px 16px;margin-top:6px}
+    #cleanBoard .hint{color:#94a3b8}
     .subtab-btn.clean-tab.active{background:#0ea5e9;box-shadow:0 4px 12px rgba(14,165,233,.3)}
     .clean-head{font-weight:800;font-size:15px;color:#e2e8f0;margin:4px 0 2px}
     .clean-count{font-size:12px;font-weight:700;color:#7f93b5}
@@ -363,10 +365,10 @@
           {% endif %}
         </div>
         <div class="t-card">
-          <div class="t-sub">👥 今日出勤　<span class="att-n">上班 {{ today_working|length }}</span> <span class="att-n leave">請假 {{ today_leaves|length }}</span></div>
+          <div class="t-sub">👥 今日出勤　<span class="att-n">上班 {{ today_working|length }}</span> <span class="att-n leave">休假 {{ today_leaves|length }}</span></div>
           {% if today_leaves %}
           <div class="leave-line">{% for u in today_leaves %}<span class="leave-pill">{{ u.name }}（{{ u.leave }}）</span>{% endfor %}</div>
-          {% else %}<div class="t-empty sm" style="padding:5px 0">今日無人請假</div>{% endif %}
+          {% else %}<div class="t-empty sm" style="padding:5px 0">今日無人休假</div>{% endif %}
         </div>
       </div>
       {% elif dept_notes_cards %}
