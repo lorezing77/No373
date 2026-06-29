@@ -2048,16 +2048,14 @@ def build_month_position_view(department, shift, year, month, num_days, schemes=
             sch = select_scheme_for_count(department, len(items), shift, schemes)
             order_tasks = list(sch.get("tasks", [])) if sch else []
             pool = list(items)
+            # 先照方案工作位順序對到的人，靠左排
             for t in order_tasks:
-                hit = None
                 for i, (nm, tk) in enumerate(pool):
                     if tk == t:
-                        hit = i
+                        slots.append(nm)
+                        pool.pop(i)
                         break
-                if hit is not None:
-                    slots.append(pool.pop(hit)[0])
-                else:
-                    slots.append("")
+            # 對不到方案（例如方案被改過）的人，按原順序緊接補上，不留前導空格
             for nm, tk in pool:
                 slots.append(nm)
         wi = datetime(year, month, day).weekday()
