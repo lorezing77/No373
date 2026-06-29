@@ -1295,8 +1295,21 @@ def get_working_users_by_department_day(department, day, year=None, month=None, 
     return working
 
 
+_WORK_HIST_CACHE = {"df": None, "ts": 0.0}
+_DUTY_HIST_CACHE = {"df": None, "ts": 0.0}
+_HIST_TTL = 5.0
+
+
+def invalidate_history_cache():
+    _WORK_HIST_CACHE["df"] = None
+    _DUTY_HIST_CACHE["df"] = None
+
+
 def load_history_df():
+    if _WORK_HIST_CACHE["df"] is not None and (time.time() - _WORK_HIST_CACHE["ts"]) < _HIST_TTL:
+        return _WORK_HIST_CACHE["df"].copy()
     cols = ["日期", "年份", "月份", "日", "部門", "班別", "人員", "工作", "方案", "分配方式", "產生時間", "批次ID"]
+    df = pd.DataFrame(columns=cols)
     if db_enabled():
         try:
             with pg_conn() as conn, conn.cursor() as cur:
@@ -1306,20 +1319,23 @@ def load_history_df():
             for c in cols:
                 if c not in df.columns:
                     df[c] = ""
-            return df[cols]
+            df = df[cols]
         except Exception as e:
             print(f"讀取工作分配歷史失敗（DB）：{e}")
-            return pd.DataFrame(columns=cols)
-    if os.path.exists(HISTORY_FILE):
+            df = pd.DataFrame(columns=cols)
+    elif os.path.exists(HISTORY_FILE):
         try:
             df = pd.read_excel(HISTORY_FILE, sheet_name=SHEET_HISTORY)
             for c in cols:
                 if c not in df.columns:
                     df[c] = ""
-            return df[cols]
+            df = df[cols]
         except Exception as e:
             print(f"讀取工作分配歷史失敗：{e}")
-    return pd.DataFrame(columns=cols)
+            df = pd.DataFrame(columns=cols)
+    _WORK_HIST_CACHE["df"] = df
+    _WORK_HIST_CACHE["ts"] = time.time()
+    return df.copy()
 
 
 def _save_history_df_to_db(df):
@@ -1354,6 +1370,7 @@ def _save_history_df_to_db(df):
 
 
 def save_history_df(df):
+    invalidate_history_cache()
     if db_enabled():
         try:
             _save_history_df_to_db(df)
@@ -1669,7 +1686,10 @@ def duty_history_columns():
 
 
 def load_duty_history_df():
+    if _DUTY_HIST_CACHE["df"] is not None and (time.time() - _DUTY_HIST_CACHE["ts"]) < _HIST_TTL:
+        return _DUTY_HIST_CACHE["df"].copy()
     cols = duty_history_columns()
+    df = pd.DataFrame(columns=cols)
     if db_enabled():
         try:
             with pg_conn() as conn, conn.cursor() as cur:
@@ -1679,21 +1699,23 @@ def load_duty_history_df():
             for c in cols:
                 if c not in df.columns:
                     df[c] = ""
-            return df[cols]
+            df = df[cols]
         except Exception as e:
             print(f"讀取值日生歷史失敗（DB）：{e}")
-            return pd.DataFrame(columns=cols)
-    if os.path.exists(DUTY_HISTORY_FILE):
-        try:
-            df = pd.read_excel(DUTY_HISTORY_FILE)
-        except Exception:
             df = pd.DataFrame(columns=cols)
     else:
-        df = pd.DataFrame(columns=cols)
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    return df[cols]
+        if os.path.exists(DUTY_HISTORY_FILE):
+            try:
+                df = pd.read_excel(DUTY_HISTORY_FILE)
+            except Exception:
+                df = pd.DataFrame(columns=cols)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
+        df = df[cols]
+    _DUTY_HIST_CACHE["df"] = df
+    _DUTY_HIST_CACHE["ts"] = time.time()
+    return df.copy()
 
 
 def _save_duty_history_to_db(df):
@@ -1723,6 +1745,7 @@ def _save_duty_history_to_db(df):
 
 
 def save_duty_history_df(df):
+    invalidate_history_cache()
     if db_enabled():
         try:
             _save_duty_history_to_db(df)
@@ -3040,6 +3063,47 @@ def duty_exists_for_month(shift, year, month):
         (df["班別"].astype(str).str.strip() == str(shift))
     )
     return bool(mask.any())
+
+
+@app.route("/api/find_worker", methods=["GET"])
+def api_find_worker():
+    """搜尋『財務』某班別某天負責某工作的人。部門固定鎖財務，與當前切換的部門無關。"""
+    department = "財務"
+    shift = clean_text(request.args.get("shift", ""))
+    if shift not in SHIFTS:
+        shift = SHIFTS[-1] if SHIFTS else ""
+    q = clean_text(request.args.get("q", ""))
+    if not q:
+        return jsonify({"status": "error", "message": "請輸入要搜尋的工作"}), 400
+    try:
+        year = int(request.args.get("year"))
+        month = int(request.args.get("month"))
+    except Exception:
+        _n, _ = now_info()
+        year, month = _n.year, _n.month
+    now, num_days = now_info(year, month)
+    year, month = now.year, now.month
+    try:
+        day = int(request.args.get("day"))
+    except Exception:
+        day = 1
+    day = min(max(day, 1), num_days)
+    date_str = f"{year}-{month:02d}-{day:02d}"
+    records = latest_assignment_records_for_day(date_str, department, shift)
+    ql = q.lower()
+    names = []
+    for r in records:
+        tags = [t for t in str(r.get("工作", "")).split() if t.strip()]
+        if any(t.lower() == ql for t in tags):
+            nm = clean_text(r.get("人員", ""))
+            if nm and nm not in names:
+                names.append(nm)
+    return jsonify({
+        "status": "success",
+        "department": department, "shift": shift,
+        "date": f"{month}/{day}", "q": q,
+        "names": names, "has_schedule": len(records) > 0,
+    })
 
 
 @app.route("/api/save_dept_notes", methods=["POST"])
