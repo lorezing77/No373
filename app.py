@@ -1922,6 +1922,154 @@ def latest_duty_records_for_month(year, month, shift=None):
     except Exception:
         return []
 
+
+def build_month_work_matrix(year, month, department, shift, num_days, group_users):
+    """整月『人×日』工作矩陣（某部門×班別）。
+    回傳 {people:[姓名...], rows:{姓名:{日:工作字串}}, leaves:{姓名:{日:假別}}}。
+    每天取『最新批次』，與單日顯示邏輯一致。"""
+    start = f"{year}-{month:02d}-01"
+    end = f"{year}-{month:02d}-{num_days:02d}"
+    try:
+        records, _ = filter_history_by_range(start, end, department, "", shift)
+    except Exception:
+        records = []
+    rows = {}
+    if records:
+        try:
+            df = pd.DataFrame(records)
+            if "日" in df.columns:
+                df["__day"] = pd.to_numeric(df["日"], errors="coerce")
+            else:
+                df["__day"] = pd.to_datetime(df.get("日期"), errors="coerce").dt.day
+            df["__dt"] = pd.to_datetime(df["產生時間"], errors="coerce") if "產生時間" in df.columns else pd.NaT
+            for day, sub in df.groupby("__day"):
+                if pd.isna(day):
+                    continue
+                day = int(day)
+                sort_cols = ["__dt", "批次ID"] if "批次ID" in sub.columns else ["__dt"]
+                sub = sub.sort_values(sort_cols, na_position="first")
+                if "批次ID" in sub.columns:
+                    latest_batch = clean_text(sub.iloc[-1].get("批次ID", ""))
+                    if latest_batch:
+                        sub = sub[sub["批次ID"].astype(str).str.strip() == latest_batch]
+                for _, r in sub.iterrows():
+                    nm = clean_text(r.get("人員", ""))
+                    wk = clean_text(r.get("工作", ""))
+                    if nm:
+                        rows.setdefault(nm, {})[day] = wk
+        except Exception as e:
+            print(f"建立整月工作矩陣失敗：{e}")
+    people = []
+    leaves = {}
+    for u in (group_users or []):
+        nm = clean_text(u.get("name", ""))
+        if nm and nm not in people:
+            people.append(nm)
+            lv = {}
+            for k, v in (u.get("leaves", {}) or {}).items():
+                vv = clean_leave_value(v)
+                if vv:
+                    try:
+                        lv[int(k)] = vv
+                    except Exception:
+                        pass
+            leaves[nm] = lv
+    for nm in rows:
+        if nm not in people:
+            people.append(nm)
+            leaves.setdefault(nm, {})
+    return {"people": people, "rows": rows, "leaves": leaves}
+
+
+def build_month_position_view(department, shift, year, month, num_days, schemes=None, duty_set_by_day=None):
+    """日×工作位 月表（仿手繪班表）。
+    回傳:
+      reference: [{count:int, tasks:[工作位字串...]}]  依人數高到低（工作方案參考）
+      max_slots: int  最多工作位數
+      has_any: bool   本月是否已有任何排班
+      day_rows: [{day, wd, weekend, has, slots:[人名...], duty:"A、B"}]
+    """
+    if schemes is None:
+        schemes = load_work_schemes()
+    gk = group_key(department, shift)
+    bucket = schemes.get(gk, {}) or {}
+    reference = []
+    for ck in sorted((int(k) for k in bucket.keys() if str(k).isdigit()), reverse=True):
+        lst = bucket.get(str(ck)) or []
+        if lst:
+            reference.append({"count": ck, "tasks": list(lst[0].get("tasks", []))})
+
+    start = f"{year}-{month:02d}-01"
+    end = f"{year}-{month:02d}-{num_days:02d}"
+    try:
+        records, _ = filter_history_by_range(start, end, department, "", shift)
+    except Exception:
+        records = []
+    by_day = {}
+    if records:
+        try:
+            df = pd.DataFrame(records)
+            if "日" in df.columns:
+                df["__day"] = pd.to_numeric(df["日"], errors="coerce")
+            else:
+                df["__day"] = pd.to_datetime(df.get("日期"), errors="coerce").dt.day
+            df["__dt"] = pd.to_datetime(df["產生時間"], errors="coerce") if "產生時間" in df.columns else pd.NaT
+            for day, sub in df.groupby("__day"):
+                if pd.isna(day):
+                    continue
+                day = int(day)
+                if "批次ID" in sub.columns:
+                    sub = sub.sort_values(["__dt", "批次ID"], na_position="first")
+                    latest_batch = clean_text(sub.iloc[-1].get("批次ID", ""))
+                    if latest_batch:
+                        sub = sub[sub["批次ID"].astype(str).str.strip() == latest_batch]
+                items = []
+                for _, r in sub.iterrows():
+                    nm = clean_text(r.get("人員", ""))
+                    tk = clean_text(r.get("工作", ""))
+                    if nm:
+                        items.append((nm, tk))
+                if items:
+                    by_day[day] = items
+        except Exception as e:
+            print(f"建立日×工作位失敗：{e}")
+
+    _wd = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
+    max_slots = 0
+    for ref in reference:
+        max_slots = max(max_slots, len(ref["tasks"]))
+    day_rows = []
+    has_any = False
+    for day in range(1, num_days + 1):
+        items = by_day.get(day, [])
+        slots = []
+        if items:
+            has_any = True
+            sch = select_scheme_for_count(department, len(items), shift, schemes)
+            order_tasks = list(sch.get("tasks", [])) if sch else []
+            pool = list(items)
+            for t in order_tasks:
+                hit = None
+                for i, (nm, tk) in enumerate(pool):
+                    if tk == t:
+                        hit = i
+                        break
+                if hit is not None:
+                    slots.append(pool.pop(hit)[0])
+                else:
+                    slots.append("")
+            for nm, tk in pool:
+                slots.append(nm)
+        wi = datetime(year, month, day).weekday()
+        max_slots = max(max_slots, len(slots))
+        day_rows.append({
+            "day": day, "wd": _wd[wi], "weekend": wi >= 5,
+            "has": bool(items), "slots": slots,
+            "duty": "、".join((duty_set_by_day or {}).get(day, [])),
+        })
+    return {"reference": reference, "max_slots": max_slots, "has_any": has_any, "day_rows": day_rows}
+
+
 def history_for_current_month():
     now, _ = now_info()
     start_date = f"{now.year}-{now.month:02d}-01"
@@ -2217,6 +2365,24 @@ def index():
     today_assignment_records = latest_assignment_records_for_day(today_date, selected_department, selected_shift)
     today_duty_record = latest_duty_record_for_day(today_date, selected_shift)
     month_duty_records = latest_duty_records_for_month(now.year, now.month, selected_shift)
+
+    # 第五分頁：整月工作表（日×工作位＋方案參考＋值日生），三部門各一份
+    month_duty_set_by_day = {}
+    for _rec in (month_duty_records or []):
+        try:
+            _dd = int(_rec.get("日"))
+        except Exception:
+            continue
+        _nm = clean_text(_rec.get("值日生", ""))
+        if not _nm:
+            continue
+        month_duty_set_by_day.setdefault(_dd, [])
+        if _nm not in month_duty_set_by_day[_dd]:
+            month_duty_set_by_day[_dd].append(_nm)
+    month_pos_by_dept = {}
+    for _dept in DEPARTMENTS:
+        month_pos_by_dept[_dept] = build_month_position_view(
+            _dept, selected_shift, now.year, now.month, num_days, work_schemes, month_duty_set_by_day)
     plan_status = get_plan_status(now.year, now.month, selected_department, selected_shift)
     anomaly_ctx = MonthlyAssignmentContext(selected_department, selected_shift, now.year, now.month)
     anomalies = build_anomaly_report(now.year, now.month, selected_department, selected_shift, ctx=anomaly_ctx)
@@ -2280,6 +2446,7 @@ def index():
         today_assignment_records=today_assignment_records,
         today_duty_record=today_duty_record,
         month_duty_records=month_duty_records,
+        month_pos_by_dept=month_pos_by_dept,
         plan_status=plan_status,
         anomalies=anomalies,
         is_admin=is_admin(),
@@ -2708,9 +2875,8 @@ def produce_duty_for_month(shift, year, month):
             dfh = dfh[~old_mask].reset_index(drop=True)
             save_duty_history_df(dfh)
 
-    daily_counts = duty_person_counts(shift)
-    for user in duty_users:
-        daily_counts.setdefault(user, 0)
+    # 只看當月：名單上的人每人從 0 起算，整月平均分配（不累積跨月歷史）
+    daily_counts = {user: 0 for user in duty_users}
 
     duty_count = daily_duty_count_for_shift(shift)
     daily_schedule = []
@@ -2963,10 +3129,18 @@ def reassign_duty_from_day(shift, start_day, year, month):
     if not ok:
         return {"reassigned": False, "days": 0, "error": msg}
 
-    # 公平基礎：從剩餘歷史（含本月 1~start_day-1 與其他月）即時算
-    daily_counts = duty_person_counts(shift)
-    for u in duty_users:
-        daily_counts.setdefault(u, 0)
+    # 公平基礎：只看本月已保留的 1~(start_day-1)，讓整月平均（不累積跨月歷史）
+    daily_counts = {u: 0 for u in duty_users}
+    if not df.empty:
+        kept = df[
+            (df["年份"].astype(str) == str(year)) &
+            (df["月份"].astype(str) == str(month)) &
+            (df["班別"].astype(str).str.strip() == str(shift))
+        ]
+        for _, _r in kept.iterrows():
+            _nm = clean_text(_r.get("值日生", ""))
+            if _nm in daily_counts:
+                daily_counts[_nm] += 1
 
     _, df_leave = init_attendance_sheets(year, month)
     leave_records = {}
