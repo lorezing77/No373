@@ -57,11 +57,11 @@
       <h2>👥 今日出勤</h2>
       <div class="stats">
         <div class="stat"><div class="n">{{ working|length }}</div><div class="l">上班</div></div>
-        <div class="stat"><div class="n">{{ leaves|length }}</div><div class="l">請假</div></div>
+        <div class="stat"><div class="n">{{ leaves|length }}</div><div class="l">休假</div></div>
       </div>
       {% if leaves %}
       <div style="margin-top: 14px">
-        <div style="color: #94a3b8; font-size: 13px; margin-bottom: 6px">請假名單</div>
+        <div style="color: #94a3b8; font-size: 13px; margin-bottom: 6px">休假名單</div>
         {% for u in leaves %}<span class="tag">{{ u.name }}（{{ u.leaves.get(current_day|string, '休') }}）</span>{% endfor %}
       </div>
       {% endif %}
