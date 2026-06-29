@@ -121,19 +121,23 @@
     .mtab td .wtag{margin:1px 2px}
     .mtab .duty-tag{display:inline-block;background:#fbbf24;color:#1b2533;border-radius:6px;padding:2px 7px;margin:1px 2px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 
-    /* 日×工作位（手繪班表風）*/
-    .pv-title{font-weight:800;font-size:13px;color:#e2e8f0;margin:4px 0 6px}
-    .pvtab td,.pvtab th{min-width:64px}
-    .pvtab .sticky-name{min-width:78px}
-    .pvtab .task-cell{font-size:11px;line-height:1.5}
-    .pvtab .name-cell{font-size:15px;font-weight:800;color:#f1f5f9}
-    .pvtab .ref-row td{background:#13203a}
-    .pvtab .ref-row .sticky-name{background:#13203a;color:#fbbf24;font-weight:800}
-    .pvtab tr.wknd-row td{background:#172033}
-    .pvtab tr.wknd-row td.sticky-name{background:#0f172a}
-    .pvtab .duty-col{position:sticky;right:0;background:#3b2a16;color:#fcd34d;font-weight:800;box-shadow:-1px 0 0 #1e293b;z-index:2}
-    .pvtab thead th.duty-col{background:#4a3413;color:#fde68a;z-index:4}
-    .pvtab .ref-row td.duty-col{background:#3b2a16}
+    /* 日×工作位（合併方案參考＋每日排班，寬度自適應、不拖拉）*/
+    .pvtab{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;background:#0f172a;border:1px solid #1e293b;border-radius:12px;overflow:hidden;margin-top:6px}
+    .pvtab col.c-label{width:64px}
+    .pvtab col.c-duty{width:66px}
+    .pvtab th,.pvtab td{border-bottom:1px solid #1e293b;border-right:1px solid #1e293b;padding:6px 5px;font-size:12px;text-align:center;vertical-align:middle;color:#e2e8f0;word-break:break-word}
+    .pvtab .sec{background:#1e293b;color:#cbd5e1;font-weight:800;text-align:left;font-size:12.5px;padding:8px 11px}
+    .pvtab .head-row th{background:#243049;color:#cbd5e1;font-weight:700}
+    .pvtab .sticky-name{font-weight:800;color:#f1f5f9;font-size:12px}
+    .pvtab .wd{font-size:10px;color:#94a3b8;font-weight:600}
+    .pvtab .task-cell{white-space:normal;line-height:1.8}
+    .pvtab .task-cell .wtag{margin:1px;font-size:11px;padding:2px 6px}
+    .pvtab .name-cell{font-size:14px;font-weight:800;color:#f1f5f9;white-space:nowrap}
+    .pvtab .ref-row .sticky-name{color:#fbbf24}
+    .pvtab tr.wknd-row td{background:#141d30}
+    .pvtab .duty-col{background:#3b2a16;color:#fcd34d;font-weight:800}
+    .pvtab .head-row th.duty-col{background:#4a3413;color:#fde68a}
+    .pvtab tr.day-row td:last-child,.pvtab tr.head-row th:last-child{border-right:none}
     .mw-duty .mtab td:not(.sticky-name){min-width:36px;font-weight:700;color:#fbbf24}
 
     /* 假表 */
@@ -665,41 +669,38 @@
       {% for d in departments %}
       {% set pv = month_pos_by_dept[d] %}
       <div class="dept-board {% if loop.first %}active{% endif %}" id="deptBoard{{ loop.index0 }}">
-        {% if pv.reference %}
-        <div class="pv-title">📋 工作方案（依當天人數）</div>
-        <div class="mwrap">
-          <table class="mtab pvtab">
-            <thead><tr><th class="sticky-name">人數</th>{% for i in range(pv.max_slots) %}<th>位{{ i+1 }}</th>{% endfor %}<th class="duty-col">值日生<br><span class="wd">倒垃圾·含廁所</span></th></tr></thead>
-            <tbody>
-              {% for ref in pv.reference %}
-              <tr class="ref-row">
-                <td class="sticky-name">{{ ref.count }} 人</td>
-                {% for i in range(pv.max_slots) %}<td class="task-cell">{% if i < ref.tasks|length %}{% for t in ref.tasks[i].split() %}<span class="wtag">{{ t }}</span>{% endfor %}{% endif %}</td>{% endfor %}
-                {% if loop.first %}<td class="duty-col" rowspan="{{ pv.reference|length }}"></td>{% endif %}
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% if pv.reference or pv.has_any %}
+        <table class="pvtab">
+          <colgroup><col class="c-label">{% for i in range(pv.max_slots) %}<col>{% endfor %}<col class="c-duty"></colgroup>
+          {% if pv.reference %}
+          <tbody>
+            <tr class="sec-row"><td class="sec" colspan="{{ pv.max_slots + 2 }}">📋 工作方案（依當天人數）</td></tr>
+            <tr class="head-row"><th class="sticky-name">人數</th>{% for i in range(pv.max_slots) %}<th>位{{ i+1 }}</th>{% endfor %}<th class="duty-col">值日生<br><span class="wd">倒垃圾·含廁所</span></th></tr>
+            {% for ref in pv.reference %}
+            <tr class="ref-row">
+              <td class="sticky-name">{{ ref.count }} 人</td>
+              {% for i in range(pv.max_slots) %}<td class="task-cell">{% if i < ref.tasks|length %}{% for t in ref.tasks[i].split() %}<span class="wtag">{{ t }}</span>{% endfor %}{% endif %}</td>{% endfor %}
+              <td class="duty-col"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          {% endif %}
+          {% if pv.has_any %}
+          <tbody>
+            <tr class="sec-row"><td class="sec" colspan="{{ pv.max_slots + 2 }}">🗓️ 每日排班</td></tr>
+            <tr class="head-row"><th class="sticky-name">日期</th>{% for i in range(pv.max_slots) %}<th>位{{ i+1 }}</th>{% endfor %}<th class="duty-col">值日生</th></tr>
+            {% for row in pv.day_rows %}
+            <tr class="day-row {% if row.weekend %}wknd-row{% endif %}">
+              <td class="sticky-name">{{ selected_month }}/{{ row.day }} <span class="wd">{{ row.wd }}</span></td>
+              {% for i in range(pv.max_slots) %}<td class="name-cell">{% if i < row.slots|length %}{{ row.slots[i] }}{% endif %}</td>{% endfor %}
+              <td class="duty-col name-cell">{{ row.duty }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          {% endif %}
+        </table>
         {% endif %}
-
-        {% if pv.has_any %}
-        <div class="pv-title" style="margin-top:16px">🗓️ 每日排班</div>
-        <div class="mwrap">
-          <table class="mtab pvtab">
-            <thead><tr><th class="sticky-name">日期</th>{% for i in range(pv.max_slots) %}<th>位{{ i+1 }}</th>{% endfor %}<th class="duty-col">值日生</th></tr></thead>
-            <tbody>
-              {% for row in pv.day_rows %}
-              <tr class="{% if row.weekend %}wknd-row{% endif %}">
-                <td class="sticky-name">{{ selected_month }}/{{ row.day }} <span class="wd">{{ row.wd }}</span></td>
-                {% for i in range(pv.max_slots) %}<td class="name-cell">{% if i < row.slots|length %}{{ row.slots[i] }}{% endif %}</td>{% endfor %}
-                <td class="duty-col name-cell">{{ row.duty }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
+        {% if not pv.has_any %}
         <div class="empty" style="padding:16px">{{ d }}｜{{ selected_shift }} 本月尚未產生工作表（到「內容設定」按「產生／更新整月工作表」）。{% if not pv.reference %} 另外此部門班別尚未設定工作方案。{% endif %}</div>
         {% endif %}
       </div>
