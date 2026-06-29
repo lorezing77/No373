@@ -1536,6 +1536,76 @@ class MonthlyAssignmentContext:
                 if clean_leave_value(self.leave_records.get(m, {}).get(day, "")) == ""]
 
 
+SIFANG_DEPT = "四方"
+
+
+def _prev_month_last_day_leavers(members, year, month, shift):
+    """四方規則跨月用：上個月最後一天休假的人名集合（只看四方該班別相關人員）。"""
+    py, pm = (year - 1, 12) if int(month) == 1 else (year, int(month) - 1)
+    leavers = set()
+    try:
+        _prev, prev_days = now_info(py, pm)
+        last = str(prev_days)
+        _, df_leave = init_attendance_sheets(py, pm)
+        lr = {}
+        if df_leave is not None and not df_leave.empty:
+            for _, row in df_leave.iterrows():
+                nm = clean_text(row.get("姓名", ""))
+                if nm:
+                    lr[nm] = row.to_dict()
+        for m in members:
+            if clean_leave_value(lr.get(m, {}).get(last, "")):
+                leavers.add(m)
+    except Exception as e:
+        print(f"四方跨月前一天假表讀取失敗：{e}")
+    return leavers
+
+
+def _sifang_returners(ctx, workers, year, month, shift, day):
+    """四方規則：回傳『前一天休假、今天回來上班』的人。day=1 跨月看上月最後一天。"""
+    day = int(day)
+    if day > 1:
+        if ctx is not None:
+            lr = ctx.leave_records
+        else:
+            lr = {}
+            try:
+                _, df_leave = init_attendance_sheets(year, month)
+                if df_leave is not None and not df_leave.empty:
+                    for _, row in df_leave.iterrows():
+                        nm = clean_text(row.get("姓名", ""))
+                        if nm:
+                            lr[nm] = row.to_dict()
+            except Exception:
+                lr = {}
+        return [m for m in workers if clean_leave_value(lr.get(m, {}).get(str(day - 1), ""))]
+    prev_leavers = _prev_month_last_day_leavers(workers, year, month, shift)
+    return [m for m in workers if m in prev_leavers]
+
+
+def apply_sifang_yu_rule(assignments, tasks, workers, ctx, department, shift, year, month, day):
+    """四方專屬：前一天休假、今天回來上班的人，當天工作位指給含『馀額/餘額』的那一格。
+    用交換方式維持各工作位都有人；該天方案沒有馀額位則照常、不強制。最多處理一人。"""
+    if department != SIFANG_DEPT:
+        return assignments
+    yu_task = next((t for t in tasks if ("馀額" in str(t) or "餘額" in str(t))), None)
+    if not yu_task:
+        return assignments
+    returners = _sifang_returners(ctx, workers, year, month, shift, day)
+    if not returners:
+        return assignments
+    ru = returners[0]
+    amap = {a["user"]: a for a in assignments}
+    if ru not in amap or amap[ru]["task"] == yu_task:
+        return assignments
+    old_task = amap[ru]["task"]
+    holder = next((a for a in assignments if a["task"] == yu_task and a["user"] != ru), None)
+    amap[ru]["task"] = yu_task
+    if holder:
+        holder["task"] = old_task
+    return assignments
+
+
 def create_assignment_for_day(department, day, mode="balanced_random", save=True, batch_id=None, local_counts=None, year=None, month=None, shift="晚班", ctx=None):
     selected, _ = now_info(year, month)
     year, month = selected.year, selected.month
@@ -1585,6 +1655,9 @@ def create_assignment_for_day(department, day, mode="balanced_random", save=True
                 bucket = ctx.base_task_counts.setdefault(a["user"], {})
                 for t in task_tags(a["task"]):
                     bucket[t] = bucket.get(t, 0) + 1
+
+    # 四方專屬規則：前一天休假、今天回來上班者，當天排「含馀額」工作位（最多一人）
+    assignments = apply_sifang_yu_rule(assignments, tasks, workers, ctx, department, shift, year, month, day)
 
     result = {
         "status": "success",
