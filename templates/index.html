@@ -23,6 +23,16 @@
     .dept-tab{text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 15px;font-size:13px;font-weight:700;color:#475569;background:#fff;transition:all .15s;box-shadow:var(--shadow);white-space:nowrap}
     .dept-tab:hover{border-color:#fdba74;color:#c2410c}
     .dept-tab.active{background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(249,115,22,.28)}
+    /* 財務工作查詢 */
+    .search-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-2px 0 16px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+    .search-bar .sb-label{font-weight:800;font-size:13px;color:#c2410c;white-space:nowrap}
+    .search-bar select,.search-bar input{border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:14px;background:#fff;color:#0f172a}
+    .search-bar input{flex:1;min-width:180px}
+    .search-result{flex-basis:100%;font-size:14px;color:#64748b;font-weight:600;padding-top:2px}
+    .search-result b{color:#0f172a}
+    .search-result.ok{color:#0f766e}.search-result.ok .fw-names{color:#c2410c}
+    .search-result.none{color:#b45309}
+    .search-result.warn{color:#9ca3af}
     .topbar .role{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .pill{display:inline-block;border-radius:999px;padding:3px 10px;background:#e0ecff;color:#1d4ed8;font-size:12px;font-weight:700}
     .mini{color:var(--muted);font-size:12px}
@@ -297,6 +307,14 @@
     </label>
     <button class="btn" type="submit">切換查看</button>
   </form>
+
+  <div class="search-bar">
+    <span class="sb-label">🔍 財務工作查詢</span>
+    <select id="fwShift">{% for sh in shifts %}<option value="{{ sh }}" {% if sh == selected_shift %}selected{% endif %}>{{ sh }}</option>{% endfor %}</select>
+    <input id="fwQuery" placeholder="輸入財務工作（例如 ND），查當天負責人" onkeydown="if(event.key==='Enter'){event.preventDefault();findWorker();}">
+    <button class="btn" type="button" onclick="findWorker()">搜尋</button>
+    <div id="fwResult" class="search-result">查的永遠是財務，與目前切換的部門無關；班別自選、日期跟上方所選。</div>
+  </div>
 
   <!-- 今日面板：每天都看得到，不必進分頁 -->
   <section class="today" id="todayTopResult">
@@ -818,6 +836,7 @@
 <script>
 const SELECTED_YEAR = {{ selected_year }};
 const SELECTED_MONTH = {{ selected_month }};
+const SELECTED_DAY = {{ current_day }};
 const SELECTED_DEPARTMENT = {{ selected_department|tojson }};
 const SELECTED_SHIFT = {{ selected_shift|tojson }};
 const PLAN_STATUS = {{ plan_status.status|tojson }};
@@ -860,6 +879,24 @@ function copyWork(btn){
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(done).catch(function(){fallbackCopy(text);done();});
   } else { fallbackCopy(text); done(); }
+}
+
+// ===== 財務工作查詢（永遠查財務，與目前部門無關）=====
+function findWorker(){
+  var shift=document.getElementById('fwShift').value;
+  var q=(document.getElementById('fwQuery').value||'').trim();
+  var box=document.getElementById('fwResult');
+  if(!q){ box.textContent='請輸入要搜尋的工作'; box.className='search-result'; return; }
+  box.textContent='搜尋中…'; box.className='search-result';
+  var u='/api/find_worker?department='+encodeURIComponent('財務')+'&shift='+encodeURIComponent(shift)
+       +'&year='+SELECTED_YEAR+'&month='+SELECTED_MONTH+'&day='+SELECTED_DAY+'&q='+encodeURIComponent(q);
+  fetch(u).then(function(r){return r.json();}).then(function(d){
+    if(!d||d.status!=='success'){ box.textContent=(d&&d.message)||'搜尋失敗'; box.className='search-result none'; return; }
+    var head='財務 '+d.shift+' '+d.date+' ';
+    if(!d.has_schedule){ box.textContent=head+'尚未產生排班'; box.className='search-result warn'; return; }
+    if(d.names&&d.names.length){ box.innerHTML=head+'<b>'+d.q+'</b>：<b class="fw-names">'+d.names.join('、')+'</b>'; box.className='search-result ok'; }
+    else { box.textContent=head+'沒有人負責 '+d.q; box.className='search-result none'; }
+  }).catch(function(e){ box.textContent='發生錯誤：'+e; box.className='search-result none'; });
 }
 
 // ===== 工作說明卡片編輯器 =====
