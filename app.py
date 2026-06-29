@@ -33,6 +33,7 @@ ADMIN_PASSWORD = "9527"
 SYSTEM_SETTINGS_FILE = os.path.join(BASE_DIR, "system_settings.json")
 AUTO_BACKUP_DIR = os.path.join(BASE_DIR, "auto_backups")
 WEEKLY_CLEAN_FILE = os.path.join(BASE_DIR, "weekly_clean_status.json")
+DEPT_NOTES_FILE = os.path.join(BASE_DIR, "dept_work_notes.json")
 WORK_ITEMS_FILE = os.path.join(BASE_DIR, "work_items.json")
 
 # ======== 資料庫層（Neon PostgreSQL）========
@@ -278,7 +279,7 @@ def migrate_all_if_needed():
                 print("已匯入操作紀錄")
     except Exception as e:
         print(f"操作紀錄遷移失敗：{e}")
-    for key, path in [("system_settings", SYSTEM_SETTINGS_FILE), ("work_schemes", WORK_SCHEME_FILE), ("plan_status", PLAN_STATUS_FILE), ("weekly_clean", WEEKLY_CLEAN_FILE)]:
+    for key, path in [("system_settings", SYSTEM_SETTINGS_FILE), ("work_schemes", WORK_SCHEME_FILE), ("plan_status", PLAN_STATUS_FILE), ("weekly_clean", WEEKLY_CLEAN_FILE), ("dept_notes", DEPT_NOTES_FILE)]:
         try:
             if kv_get(key) is None and os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
@@ -444,7 +445,7 @@ def make_auto_backup(reason="auto"):
         return ""
     os.makedirs(AUTO_BACKUP_DIR, exist_ok=True)
     path = os.path.join(AUTO_BACKUP_DIR, f"auto_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{reason}.zip")
-    files = [FILE_DUTY, FILE_LEAVE, WORK_SCHEME_FILE, HISTORY_FILE, DUTY_HISTORY_FILE, PLAN_STATUS_FILE, OPERATION_LOG_FILE, SYSTEM_SETTINGS_FILE, WEEKLY_CLEAN_FILE]
+    files = [FILE_DUTY, FILE_LEAVE, WORK_SCHEME_FILE, HISTORY_FILE, DUTY_HISTORY_FILE, PLAN_STATUS_FILE, OPERATION_LOG_FILE, SYSTEM_SETTINGS_FILE, WEEKLY_CLEAN_FILE, DEPT_NOTES_FILE]
     try:
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in files:
@@ -1815,6 +1816,67 @@ def clear_weekly_clean(year, month, shift):
     return save_weekly_clean(data)
 
 
+DEPT_NOTE_COLORS = ["blue", "green", "gray", "purple", "amber"]
+
+
+def normalize_dept_notes(raw):
+    """{群組key: [{id,title,content,color}]}；清理欄位、補預設色。"""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for gk, cards in raw.items():
+        if not isinstance(cards, list):
+            continue
+        clean_cards = []
+        for c in cards:
+            if not isinstance(c, dict):
+                continue
+            title = clean_text(c.get("title", ""))
+            content = str(c.get("content", "")).strip()
+            if not title and not content:
+                continue
+            color = clean_text(c.get("color", "")) or "blue"
+            if color not in DEPT_NOTE_COLORS:
+                color = "blue"
+            clean_cards.append({
+                "id": clean_text(c.get("id", "")) or uuid.uuid4().hex[:10],
+                "title": title, "content": content, "color": color,
+            })
+        if clean_cards:
+            out[clean_text(gk)] = clean_cards
+    return out
+
+
+def load_dept_notes():
+    raw = None
+    if db_enabled():
+        raw = kv_get("dept_notes")
+    elif os.path.exists(DEPT_NOTES_FILE):
+        try:
+            with open(DEPT_NOTES_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception as e:
+            print(f"讀取工作說明卡片失敗：{e}")
+    return normalize_dept_notes(raw or {})
+
+
+def save_dept_notes(data):
+    try:
+        data = normalize_dept_notes(data)
+        if db_enabled():
+            kv_put("dept_notes", data)
+        else:
+            with open(DEPT_NOTES_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        return True, "工作說明卡片已儲存"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_dept_notes(department, shift):
+    return load_dept_notes().get(group_key(department, shift), [])
+
+
 def duty_person_counts(shift=None):
     """從值日生歷史即時計算每人累積值日次數（可依班別），作為公平基礎。"""
     df = load_duty_history_df()
@@ -2319,6 +2381,12 @@ def logout():
 
 @app.before_request
 def automatic_backup_guard():
+    # 每次請求先把全域設定（部門／班別／管理員密碼）對齊持久檔，
+    # 避免多 worker 各自保留啟動時的舊值，導致刪除部門後又被舊 worker 顯示回來。
+    try:
+        apply_system_settings(load_system_settings())
+    except Exception as e:
+        print(f"套用系統設定失敗：{e}")
     # 管理員執行重要 POST 動作前，自動留一份備份。避免每次點擊都備份，60 秒內只留一次。
     mutating_prefixes = ("/api/", "/restore_backup", "/add_calendar_user", "/add_duty_user", "/delete_duty_user")
     if request.method == "POST" and request.path.startswith(mutating_prefixes):
@@ -2362,6 +2430,28 @@ def index():
     today_date = f"{now.year}-{now.month:02d}-{sel_day:02d}"
     today_assignment_records = latest_assignment_records_for_day(today_date, selected_department, selected_shift)
     today_duty_record = latest_duty_record_for_day(today_date, selected_shift)
+
+    # 每日排班右欄：財務＝今日出勤/請假＋今明值日生/明日預告；其他部門＝工作說明卡片
+    _gusers_today = calendar_groups.get(selected_group_key, [])
+    today_working = []
+    today_leaves = []
+    for _u in _gusers_today:
+        _lv = clean_leave_value(_u.get("leaves", {}).get(str(sel_day), ""))
+        if _lv:
+            today_leaves.append({"name": _u.get("name", ""), "leave": _lv})
+        else:
+            today_working.append({"name": _u.get("name", "")})
+    tomorrow_day = sel_day + 1 if sel_day < num_days else 0
+    tomorrow_label = ""
+    tomorrow_duty_record = None
+    tomorrow_assignment_records = []
+    if tomorrow_day:
+        _tdate = f"{now.year}-{now.month:02d}-{tomorrow_day:02d}"
+        tomorrow_label = f"{now.month}/{tomorrow_day}"
+        tomorrow_duty_record = latest_duty_record_for_day(_tdate, selected_shift)
+        tomorrow_assignment_records = latest_assignment_records_for_day(_tdate, selected_department, selected_shift)
+    dept_notes_cards = get_dept_notes(selected_department, selected_shift)
+    dept_notes_all = load_dept_notes()
     month_duty_records = latest_duty_records_for_month(now.year, now.month, selected_shift)
 
     # 第五分頁：整月工作表（日×工作位＋方案參考＋值日生），三部門各一份
@@ -2443,6 +2533,13 @@ def index():
         today_date=today_date,
         today_assignment_records=today_assignment_records,
         today_duty_record=today_duty_record,
+        today_working=today_working,
+        today_leaves=today_leaves,
+        tomorrow_label=tomorrow_label,
+        tomorrow_duty_record=tomorrow_duty_record,
+        tomorrow_assignment_records=tomorrow_assignment_records,
+        dept_notes_cards=dept_notes_cards,
+        dept_notes_all=dept_notes_all,
         month_duty_records=month_duty_records,
         month_pos_by_dept=month_pos_by_dept,
         plan_status=plan_status,
@@ -2943,6 +3040,32 @@ def duty_exists_for_month(shift, year, month):
         (df["班別"].astype(str).str.strip() == str(shift))
     )
     return bool(mask.any())
+
+
+@app.route("/api/save_dept_notes", methods=["POST"])
+def api_save_dept_notes():
+    admin_error = require_admin_json()
+    if admin_error:
+        return admin_error
+    req = request.get_json(silent=True) or {}
+    department = clean_text(req.get("department", ""))
+    shift = clean_text(req.get("shift", ""))
+    if department not in DEPARTMENTS or shift not in SHIFTS:
+        return jsonify({"status": "error", "message": "部門或班別不正確"}), 400
+    cards = req.get("cards", [])
+    if not isinstance(cards, list):
+        cards = []
+    data = load_dept_notes()
+    gk = group_key(department, shift)
+    if cards:
+        data[gk] = cards
+    else:
+        data.pop(gk, None)
+    ok, msg = save_dept_notes(data)
+    if not ok:
+        return jsonify({"status": "error", "message": msg}), 500
+    log_operation("儲存工作說明卡片", department, shift, content=f"{department}｜{shift}｜{len(cards)} 張卡")
+    return jsonify({"status": "success", "message": msg, "count": len(cards)})
 
 
 @app.route("/api/generate_month_assignments", methods=["POST"])
